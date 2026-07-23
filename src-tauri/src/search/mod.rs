@@ -21,7 +21,10 @@ pub struct SearchRequest {
     pub exclude_patterns: Vec<String>,
     pub follow_symlinks: bool,
     pub multiline: bool,
-    pub context_lines: u64,
+    #[serde(default)]
+    pub context_before: u64,
+    #[serde(default)]
+    pub context_after: u64,
     pub min_file_size: String,
     pub max_file_size: String,
     pub modified_after: Option<u64>,
@@ -46,6 +49,8 @@ pub struct SearchMatch {
     pub meta_outdated: Option<bool>,
     pub line_number: u64,
     pub line_text: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_context: bool,
     pub submatches: Vec<SearchSubmatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub absolute_offset: Option<u64>,

@@ -3,12 +3,14 @@
   import type { PreviewState } from '$lib/types';
   import { copyText } from '$lib/clipboard';
   import { filename, parentPath } from '$lib/paths';
+  import { languageForPath, tokenizeLines, type SyntaxToken } from '$lib/highlight';
 
   type Segment = {
     kind: 'text';
     text: string;
     match: boolean;
     active: boolean;
+    color?: string;
   };
 
   type SourceLine = {
@@ -34,6 +36,7 @@
       };
 
   const WRAP_LIMIT = 50_000;
+  const HIGHLIGHT_LIMIT = 300_000;
 
   let {
     preview,
@@ -75,6 +78,39 @@
   let previewPanelElement = $state<HTMLElement>();
   let lastScrolledTarget = '';
   let wrapLines = $state(false);
+  let syntaxTokens = $state<Map<number, SyntaxToken[]> | null>(null);
+  let highlightRequest = 0;
+  let prefersDark = $state(window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+  $effect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (event: MediaQueryListEvent) => (prefersDark = event.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  });
+
+  $effect(() => {
+    const filePreview = preview.filePreview;
+    const lang = languageForPath(preview.filePath);
+    const dark = prefersDark;
+    const request = ++highlightRequest;
+    syntaxTokens = null;
+    if (!filePreview || !lang) return;
+    const text = filePreview.lines.map((line) => line.text).join('\n');
+    if (!text || text.length > HIGHLIGHT_LIMIT) return;
+    void tokenizeLines(text, lang, dark)
+      .then((tokenLines) => {
+        if (request !== highlightRequest) return;
+        const byLine = new Map<number, SyntaxToken[]>();
+        filePreview.lines.forEach((line, index) => {
+          byLine.set(line.number, tokenLines[index] ?? []);
+        });
+        syntaxTokens = byLine;
+      })
+      .catch(() => {
+        // Highlight assente: la preview resta in testo semplice
+      });
+  });
 
   const IMAGE_EXTENSIONS = new Set([
     'png',
@@ -90,7 +126,7 @@
     'heif'
   ]);
 
-  const canNavigateMatches = $derived(activeFileMatchTotal > 1);
+  const canNavigateMatches = $derived(activeFileMatchTotal > 1 || canNavigateFiles);
 
   const sourceLines = $derived.by(() =>
     buildSourceLines(preview.filePreview, preview.matches, preview.activeMatch)
@@ -167,14 +203,14 @@
     const rendered: RenderLine[] = [];
 
     for (const line of lines) {
-      const { lines: splitLines } = splitLine(line);
+      const { lines: splitLines } = splitLine(line, syntaxTokens?.get(line.number) ?? null);
       rendered.push(...splitLines);
     }
 
     return rendered;
   }
 
-  function splitLine(line: SourceLine): { lines: RenderLine[] } {
+  function splitLine(line: SourceLine, tokens: SyntaxToken[] | null): { lines: RenderLine[] } {
     const pieces = line.text.split('\f');
     const rendered: RenderLine[] = [];
     let pieceStart = 0;
@@ -195,7 +231,14 @@
               end: Math.min(range.end, pieceEnd) - pieceStart
             }))
             .filter((range) => range.start < range.end),
-          line.isActive
+          line.isActive,
+          tokens
+            ?.map((token) => ({
+              start: Math.max(token.start, pieceStart) - pieceStart,
+              end: Math.min(token.end, pieceEnd) - pieceStart,
+              color: token.color
+            }))
+            .filter((token) => token.start < token.end) ?? null
         )
       });
 
@@ -218,36 +261,34 @@
   function splitTextSegment(
     text: string,
     matchRanges: Array<{ start: number; end: number }>,
-    active: boolean
+    active: boolean,
+    tokens: SyntaxToken[] | null = null
   ): Segment[] {
-    if (!matchRanges.length) return [{ kind: 'text', text, match: false, active }];
-
-    const segments: Segment[] = [];
-    let cursor = 0;
-
-    for (const range of matchRanges) {
-      const start = Math.max(0, Math.min(range.start, text.length));
-      const end = Math.max(start, Math.min(range.end, text.length));
-
-      if (end <= cursor) {
-        continue;
-      }
-
-      if (start > cursor) {
-        segments.push({ kind: 'text', text: text.slice(cursor, start), match: false, active });
-      }
-
-      segments.push({
-        kind: 'text',
-        text: text.slice(Math.max(start, cursor), end),
-        match: true,
-        active
-      });
-      cursor = end;
+    if (!matchRanges.length && !tokens?.length) {
+      return [{ kind: 'text', text, match: false, active }];
     }
 
-    if (cursor < text.length) {
-      segments.push({ kind: 'text', text: text.slice(cursor), match: false, active });
+    const clamp = (value: number) => Math.max(0, Math.min(value, text.length));
+    const boundaries = new Set<number>([0, text.length]);
+    for (const range of matchRanges) {
+      boundaries.add(clamp(range.start));
+      boundaries.add(clamp(range.end));
+    }
+    for (const token of tokens ?? []) {
+      boundaries.add(clamp(token.start));
+      boundaries.add(clamp(token.end));
+    }
+
+    const sorted = [...boundaries].sort((a, b) => a - b);
+    const segments: Segment[] = [];
+
+    for (let index = 0; index < sorted.length - 1; index += 1) {
+      const start = sorted[index];
+      const end = sorted[index + 1];
+      if (end <= start) continue;
+      const match = matchRanges.some((range) => start >= range.start && end <= range.end);
+      const color = tokens?.find((token) => start >= token.start && start < token.end)?.color;
+      segments.push({ kind: 'text', text: text.slice(start, end), match, active, color });
     }
 
     return segments.length ? segments : [{ kind: 'text', text, match: false, active }];
@@ -495,12 +536,12 @@
                   onkeydown={(event) => handleLineKeydown(event, line.number)}
                 >
                   <span class="gutter" aria-hidden="true" data-line-number={line.number}></span>
-                  <code class="source">{#each line.segments as segment}{#if segment.match}<span class:active={segment.active} class="match">{segment.text}</span>{:else}<span>{segment.text}</span>{/if}{/each}</code>
+                  <code class="source">{#each line.segments as segment}{#if segment.match}<span class:active={segment.active} class="match" style:color={segment.color}>{segment.text}</span>{:else}<span style:color={segment.color}>{segment.text}</span>{/if}{/each}</code>
                 </div>
               {:else}
                 <div class="line">
                   <span class="gutter" aria-hidden="true" data-line-number={line.number}></span>
-                  <code class="source">{#each line.segments as segment}{#if segment.match}<span class:active={segment.active} class="match">{segment.text}</span>{:else}<span>{segment.text}</span>{/if}{/each}</code>
+                  <code class="source">{#each line.segments as segment}{#if segment.match}<span class:active={segment.active} class="match" style:color={segment.color}>{segment.text}</span>{:else}<span style:color={segment.color}>{segment.text}</span>{/if}{/each}</code>
                 </div>
               {/if}
             {/each}
@@ -643,7 +684,7 @@
   }
 
   .match-nav > * + * {
-    border-left: 1px solid rgba(217, 222, 229, 0.72);
+    border-left: 1px solid var(--border);
   }
 
   .nav-label-short {
@@ -651,12 +692,12 @@
   }
 
   .match-nav .file-nav-button {
-    color: #78838e;
+    color: var(--muted);
     font-weight: 650;
   }
 
   .match-nav button:disabled {
-    color: #a4adb6;
+    color: var(--muted);
   }
 
   .match-nav button:not(:disabled):hover,
@@ -862,7 +903,7 @@
     border-right: 1px solid var(--border-subtle);
     padding: 0 6px 0 4px;
     color: var(--muted);
-    background: #edf2f0;
+    background: var(--preview-bg);
     text-align: right;
     font-variant-numeric: tabular-nums;
     pointer-events: none;
@@ -875,7 +916,7 @@
 
   .line[data-active-match='true'] {
     background: var(--highlight-row);
-    outline: 1px solid #c78413;
+    outline: 1px solid var(--warn-text);
     outline-offset: -1px;
   }
 
@@ -904,7 +945,7 @@
 
   .page-break-gutter {
     border-right: 1px solid var(--border-subtle);
-    background: #edf2f0;
+    background: var(--preview-bg);
   }
 
   .source {
@@ -931,12 +972,12 @@
   .match {
     border-radius: 4px;
     padding: 0 2px;
-    color: #241800;
+    color: var(--text);
     background: var(--highlight);
   }
 
   .match.active {
-    outline: 1px solid #b06b00;
+    outline: 1px solid var(--warn-text);
     background: var(--highlight-strong);
   }
 
@@ -1110,11 +1151,11 @@
     }
 
     .mobile-match-nav > * + * {
-      border-left: 1px solid rgba(217, 222, 229, 0.72);
+      border-left: 1px solid var(--border);
     }
 
     .mobile-match-nav .file-nav-button {
-      color: #78838e;
+      color: var(--muted);
       font-weight: 650;
     }
 

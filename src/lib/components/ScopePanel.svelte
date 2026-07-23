@@ -5,12 +5,10 @@
   let {
     includePatterns = $bindable<string[]>([]),
     excludePatterns = $bindable<string[]>([]),
-    contextLines = $bindable(0),
     options = $bindable<SearchOptions>(defaultSearchOptions())
   }: {
     includePatterns: string[];
     excludePatterns: string[];
-    contextLines: number;
     options: SearchOptions;
   } = $props();
 
@@ -43,10 +41,6 @@
     if (options.search_mode === 'regex' !== options.regex) {
       options.regex = options.search_mode === 'regex';
     }
-  });
-
-  $effect(() => {
-    contextLines = options.context_lines;
   });
 </script>
 
@@ -97,9 +91,15 @@
           <input type="checkbox" bind:checked={options.follow_symlinks} />
           <span>Follow symlinks</span>
         </label>
-        <div class="field">
-          <label for="context-lines">Context lines</label>
-          <input id="context-lines" type="number" min="0" max="20" bind:value={options.context_lines} />
+        <div class="two-fields">
+          <div class="field">
+            <label for="context-before">Context before</label>
+            <input id="context-before" type="number" min="0" max="20" bind:value={options.context_before} />
+          </div>
+          <div class="field">
+            <label for="context-after">Context after</label>
+            <input id="context-after" type="number" min="0" max="20" bind:value={options.context_after} />
+          </div>
         </div>
       </section>
 
@@ -189,7 +189,7 @@
   .scope-panel {
     min-width: 0;
     border-right: 1px solid var(--border);
-    background: #f7f9fb;
+    background: var(--surface);
     padding: 10px;
     overflow: auto;
   }
@@ -203,7 +203,7 @@
 
   h2 {
     margin: 0;
-    font-size: 13px;
+    font-size: 15px;
     letter-spacing: 0;
   }
 
@@ -216,7 +216,7 @@
   label,
   .check-row span {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 650;
   }
 
@@ -230,9 +230,17 @@
     color: var(--text);
     background: var(--input);
     font: inherit;
-    font-size: 12px;
-    height: 32px;
+    font-size: 14px;
+    height: 34px;
     padding: 0 9px;
+  }
+
+  select {
+    appearance: none;
+    padding-right: 26px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888f9b' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 9px center;
   }
 
   input:focus,
@@ -250,7 +258,7 @@
   .advanced-toggle {
     display: flex;
     width: 100%;
-    height: 32px;
+    height: 34px;
     align-items: center;
     justify-content: space-between;
     border: 1px solid var(--border-subtle);
@@ -259,7 +267,7 @@
     color: var(--text);
     background: var(--input);
     font: inherit;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 700;
     cursor: pointer;
   }
@@ -281,7 +289,7 @@
   h3 {
     margin: 0;
     color: var(--text);
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 800;
   }
 

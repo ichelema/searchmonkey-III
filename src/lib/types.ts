@@ -8,7 +8,8 @@ export type SearchRequest = {
   exclude_patterns: string[];
   follow_symlinks: boolean;
   multiline: boolean;
-  context_lines: number;
+  context_before: number;
+  context_after: number;
   min_file_size: string;
   max_file_size: string;
   modified_after: number | null;
@@ -28,6 +29,7 @@ export type SearchMatch = {
   meta_outdated?: boolean | null;
   line_number: number;
   line_text: string;
+  is_context?: boolean;
   submatches: SearchSubmatch[];
   absolute_offset?: number | null;
   file_size: number | null;
@@ -92,7 +94,8 @@ export type SearchOptions = Pick<
   | 'hidden'
   | 'follow_symlinks'
   | 'multiline'
-  | 'context_lines'
+  | 'context_before'
+  | 'context_after'
   | 'min_file_size'
   | 'max_file_size'
   | 'modified_after'
@@ -131,7 +134,8 @@ export function defaultSearchOptions(): SearchOptions {
     hidden: false,
     follow_symlinks: false,
     multiline: false,
-    context_lines: 0,
+    context_before: 0,
+    context_after: 0,
     min_file_size: '',
     max_file_size: '10M',
     modified_after: null,

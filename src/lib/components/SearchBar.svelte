@@ -371,7 +371,7 @@
 
   .primary {
     border-color: var(--accent);
-    color: #ffffff;
+    color: var(--on-accent);
     background: var(--accent);
     box-shadow: 0 1px 0 rgba(11, 95, 50, 0.24);
   }
@@ -390,7 +390,7 @@
 
   .secondary {
     border-color: transparent;
-    color: #828c96;
+    color: var(--muted);
     background: transparent;
     font-weight: 600;
   }

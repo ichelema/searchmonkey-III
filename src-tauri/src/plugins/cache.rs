@@ -558,7 +558,7 @@ mod tests {
                   }},
                   "generator": {{
                     "plugin_id": "sm.plugin.pdf",
-                    "plugin_version": "9.9.9"
+                    "plugin_version": "0.9.9"
                   }},
                   "text": {{
                     "path": "{}",
@@ -576,6 +576,8 @@ mod tests {
         )
         .unwrap();
 
+        // La cache è stale solo se generata da una versione più vecchia di
+        // quella selezionata; una versione uguale o più nuova resta valida.
         let validation = validate_cache(&source_path, &plugin());
         assert_eq!(validation.status, CacheStatus::StalePlugin);
     }

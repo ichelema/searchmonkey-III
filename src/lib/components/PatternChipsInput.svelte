@@ -214,14 +214,14 @@
 
   label {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 650;
   }
 
   .chips-input {
     display: flex;
     width: 100%;
-    min-height: 34px;
+    min-height: 36px;
     min-width: 0;
     flex-wrap: wrap;
     align-items: center;
@@ -250,7 +250,7 @@
     border-radius: 5px;
     padding: 0 5px 0 8px;
     color: var(--text);
-    background: #eef3f7;
+    background: var(--disabled);
     cursor: default;
   }
 
@@ -267,7 +267,7 @@
     color: inherit;
     background: transparent;
     font: inherit;
-    font-size: 12px;
+    font-size: 13px;
     text-overflow: ellipsis;
     white-space: nowrap;
     cursor: default;
@@ -284,7 +284,7 @@
     color: var(--muted);
     background: transparent;
     font: inherit;
-    font-size: 13px;
+    font-size: 14px;
     cursor: pointer;
     line-height: 1;
   }
@@ -302,7 +302,7 @@
     color: var(--text);
     background: transparent;
     font: inherit;
-    font-size: 12px;
+    font-size: 14px;
     outline: none;
   }
 
@@ -310,7 +310,7 @@
     height: 24px;
     flex: 1 1 180px;
     border-radius: 4px;
-    background: #fff;
+    background: var(--input);
     padding: 0 5px;
   }
 
@@ -318,7 +318,7 @@
     display: grid;
     gap: 2px;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.35;
   }
 </style>

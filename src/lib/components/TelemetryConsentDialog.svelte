@@ -231,7 +231,7 @@
   .primary {
     min-width: 88px;
     border-color: var(--accent);
-    color: #ffffff;
+    color: var(--on-accent);
     background: var(--accent);
   }
 

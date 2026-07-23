@@ -104,6 +104,13 @@ where
             }
         }
 
+        if result.is_context {
+            if buffered_matches < options.result_limit {
+                on_match(result, total_matches);
+            }
+            continue;
+        }
+
         total_matches += 1;
         if buffered_matches < options.result_limit {
             buffered_matches += 1;

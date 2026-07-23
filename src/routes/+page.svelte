@@ -69,12 +69,16 @@
   let path = $state('');
   let includePatterns = $state<string[]>([]);
   let excludePatterns = $state<string[]>([]);
-  let contextLines = $state(0);
   let options = $state<SearchOptions>(defaultSearchOptions());
   let recentSearches = $state<SearchCriteria[]>([]);
   let savedSearches = $state<SearchCriteria[]>([]);
 
   let matches: SearchMatch[] = [];
+  let contextMatches: SearchMatch[] = [];
+  // Righe totali già scaricate dal buffer backend (match + contesto):
+  // è l'offset di pull, che non può basarsi su matches.length perché
+  // le righe di contesto vengono accantonate in contextMatches.
+  let fetchedRows = 0;
   let matchesVersion = $state(0);
   let selected = $state<SearchMatch | null>(null);
   let searchState = $state<SearchState>('idle');
@@ -206,6 +210,19 @@
     matchesVersion;
     return groups.flatMap((group) => group.matches);
   });
+  const contextByFile = $derived.by(() => {
+    matchesVersion;
+    const byFile = new Map<string, SearchMatch[]>();
+    for (const row of contextMatches) {
+      const rows = byFile.get(row.path);
+      if (rows) {
+        rows.push(row);
+      } else {
+        byFile.set(row.path, [row]);
+      }
+    }
+    return byFile;
+  });
   const selectedIndex = $derived.by(() => {
     matchesVersion;
     if (!selected) return -1;
@@ -285,6 +302,8 @@
 
   function resetMatches() {
     matches = [];
+    contextMatches = [];
+    fetchedRows = 0;
     pendingMatchesRender = false;
     clearResultFlushTimer();
     matchesVersion += 1;
@@ -320,8 +339,21 @@
     reindexFeedbackTimers.clear();
   }
 
-  function appendMatches(nextMatches: SearchMatch[], immediateRender = false) {
-    if (!nextMatches.length || matches.length >= MAX_DISPLAYED_MATCHES) return;
+  function appendMatches(allMatches: SearchMatch[], immediateRender = false) {
+    const contextRows = allMatches.filter((match) => match.is_context);
+    if (contextRows.length && contextMatches.length < MAX_DISPLAYED_MATCHES) {
+      const contextCapacity = MAX_DISPLAYED_MATCHES - contextMatches.length;
+      contextMatches.push(
+        ...(contextRows.length > contextCapacity ? contextRows.slice(0, contextCapacity) : contextRows)
+      );
+      pendingMatchesRender = true;
+    }
+
+    const nextMatches = allMatches.filter((match) => !match.is_context);
+    if (!nextMatches.length || matches.length >= MAX_DISPLAYED_MATCHES) {
+      if (contextRows.length && !immediateRender) scheduleResultFlush();
+      return;
+    }
 
     const remainingCapacity = MAX_DISPLAYED_MATCHES - matches.length;
     const keptMatches = nextMatches.length > remainingCapacity ? nextMatches.slice(0, remainingCapacity) : nextMatches;
@@ -1071,7 +1103,8 @@
       hidden: options.hidden,
       follow_symlinks: options.follow_symlinks,
       multiline: options.multiline,
-      context_lines: options.context_lines,
+      context_before: options.context_before,
+      context_after: options.context_after,
       min_file_size: options.min_file_size,
       max_file_size: options.max_file_size,
       modified_after: options.modified_after,
@@ -1101,7 +1134,6 @@
     includePatterns = [...criteria.includePatterns];
     excludePatterns = [...criteria.excludePatterns];
     options = { ...defaultSearchOptions(), ...criteria.options };
-    contextLines = options.context_lines;
   }
 
   function normalizedPathForCompare(filePath: string) {
@@ -1371,8 +1403,9 @@
   async function drainResults(searchId: number, immediateRender: boolean): Promise<void> {
     do {
       pendingResultPull = false;
-      const nextMatches = await getResults(searchId, matches.length, 1000);
+      const nextMatches = await getResults(searchId, fetchedRows, 1000);
       if (searchId !== activeSearchId) return;
+      fetchedRows += nextMatches.length;
       appendMatches(nextMatches, immediateRender);
       if (nextMatches.length < 1000 || matches.length >= MAX_DISPLAYED_MATCHES) break;
     } while (true);
@@ -1465,7 +1498,8 @@
           exclude_patterns: normalizeExcludePatterns(excludePatterns),
           follow_symlinks: options.follow_symlinks,
           multiline: options.multiline,
-          context_lines: options.context_lines,
+          context_before: options.context_before,
+          context_after: options.context_after,
           min_file_size: options.min_file_size,
           max_file_size: options.max_file_size,
           modified_after: options.modified_after,
@@ -2033,12 +2067,12 @@
       <ScopePanel
         bind:includePatterns
         bind:excludePatterns
-        bind:contextLines
         bind:options
       />
     {/if}
     <ResultsPanel
       {groups}
+      {contextByFile}
       {query}
       searchPath={path}
       regex={searchModeRegex()}
@@ -2111,7 +2145,6 @@
         <ScopePanel
           bind:includePatterns
           bind:excludePatterns
-          bind:contextLines
           bind:options
         />
       </div>
@@ -2238,11 +2271,16 @@
   :global(:root) {
     font-family:
       Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    color: #1e252d;
-    background: #eef1f4;
+    color: var(--text);
+    background: var(--bg);
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+    --bg: #eef1f4;
+    --on-accent: #ffffff;
+    --warn-bg: #fff6e6;
+    --warn-border: #ffd86b;
+    --warn-text: #8d5a00;
     --text: #1e252d;
     --muted: #66717d;
     --surface: #f7f9fa;
@@ -2269,12 +2307,47 @@
     --danger: #ba3c32;
   }
 
+  /* Tema scuro Nord: segue la preferenza di sistema */
+  @media (prefers-color-scheme: dark) {
+    :global(:root) {
+      --bg: #2e3440;
+      --on-accent: #eceff4;
+      --warn-bg: #453f2e;
+      --warn-border: #ebcb8b;
+      --warn-text: #ebcb8b;
+      --text: #eceff4;
+      --muted: #9aa4b2;
+      --surface: #2e3440;
+      --panel: #3b4252;
+      --input: #3b4252;
+      --disabled: #434c5e;
+      --border: #4c566a;
+      --border-subtle: #434c5e;
+      --border-strong: #566178;
+      --accent: #5e81ac;
+      --accent-strong: #81a1c1;
+      --accent-soft: #4c6a92;
+      --accent-wash: #3b4a5e;
+      --focus: rgba(136, 192, 208, 0.28);
+      --selection: #3b4252;
+      --selection-strong: #434c5e;
+      --preview-bg: #292e39;
+      --code-bg: #292e39;
+      --highlight: rgba(235, 203, 139, 0.32);
+      --highlight-strong: rgba(235, 203, 139, 0.52);
+      --highlight-row: rgba(235, 203, 139, 0.14);
+      --highlight-row-soft: rgba(235, 203, 139, 0.07);
+      --ok: #a3be8c;
+      --danger: #bf616a;
+    }
+  }
+
   :global(body) {
     margin: 0;
     min-height: 100vh;
     overflow: hidden;
     color: var(--text);
-    background: #eef1f4;
+    background: var(--bg);
   }
 
   :global(button),
@@ -2322,9 +2395,9 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
     align-items: center;
-    border-bottom: 1px solid #c8d6cc;
+    border-bottom: 1px solid var(--border);
     padding: 8px 12px;
-    background: #ecf7ef;
+    background: var(--accent-wash);
     color: var(--text);
     font-size: 12px;
   }
@@ -2342,7 +2415,7 @@
   }
 
   .update-copy span {
-    color: #54616a;
+    color: var(--muted);
     font-weight: 650;
   }
 
@@ -2366,7 +2439,7 @@
 
   .update-primary {
     border-color: var(--accent) !important;
-    color: #ffffff;
+    color: var(--on-accent);
     background: var(--accent);
   }
 
@@ -2379,7 +2452,7 @@
   .update-secondary,
   .update-dismiss {
     color: var(--accent-strong);
-    background: #ffffff;
+    background: var(--panel);
   }
 
   .update-secondary:hover,
@@ -2645,7 +2718,7 @@
 
   .save-dialog .primary-save {
     border-color: var(--accent);
-    color: #ffffff;
+    color: var(--on-accent);
     background: var(--accent);
   }
 
@@ -2653,7 +2726,7 @@
     position: relative;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    width: min(360px, calc(100vw - 32px));
+    width: min(390px, calc(100vw - 32px));
     height: 100%;
     border-right: 1px solid var(--border);
     background: var(--panel);

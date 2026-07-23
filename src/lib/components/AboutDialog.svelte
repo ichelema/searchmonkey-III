@@ -78,10 +78,10 @@
     justify-items: center;
     width: min(360px, 100%);
     max-width: calc(100vw - 24px);
-    border: 1px solid #dfe5e0;
+    border: 1px solid var(--border);
     border-radius: 14px;
     padding: 26px 24px 22px;
-    background: #ffffff;
+    background: var(--panel);
     box-shadow: 0 18px 38px rgba(30, 37, 45, 0.16);
     text-align: center;
   }
@@ -90,10 +90,10 @@
     display: grid;
     width: 68px;
     height: 68px;
-    border: 1px solid #dfe5e0;
+    border: 1px solid var(--border);
     border-radius: 16px;
     place-items: center;
-    background: #f6f8f6;
+    background: var(--surface);
   }
 
   .icon-frame img {
@@ -104,7 +104,7 @@
 
   h2 {
     margin: 16px 0 0;
-    color: #1c232b;
+    color: var(--text);
     font-size: 22px;
     font-weight: 760;
     line-height: 1.15;
@@ -113,7 +113,7 @@
   .version,
   .license {
     margin: 6px 0 0;
-    color: #6f7a84;
+    color: var(--muted);
     font-size: 13px;
     font-weight: 600;
   }
@@ -121,7 +121,7 @@
   .description {
     max-width: 250px;
     margin: 18px 0 0;
-    color: #59656f;
+    color: var(--muted);
     font-size: 14px;
     line-height: 1.5;
   }
@@ -130,7 +130,7 @@
     margin: 18px 0 0;
     border: 0;
     padding: 0;
-    color: #16834a;
+    color: var(--accent);
     background: transparent;
     font: inherit;
     font-size: 14px;
@@ -140,7 +140,7 @@
 
   .link-button:hover,
   .link-button:focus-visible {
-    color: #0f6b3b;
+    color: var(--accent-strong);
     text-decoration: underline;
     outline: none;
   }
@@ -148,7 +148,7 @@
   .error-text {
     width: 100%;
     margin: 14px 0 0;
-    color: #ba3c32;
+    color: var(--danger);
     font-size: 12px;
     font-weight: 700;
   }
@@ -157,11 +157,11 @@
     min-width: 110px;
     height: 38px;
     margin-top: 22px;
-    border: 1px solid #16834a;
+    border: 1px solid var(--accent);
     border-radius: 10px;
     padding: 0 16px;
-    color: #ffffff;
-    background: #16834a;
+    color: var(--on-accent);
+    background: var(--accent);
     font: inherit;
     font-size: 13px;
     font-weight: 700;
@@ -173,7 +173,7 @@
 
   .close-button:hover,
   .close-button:focus-visible {
-    background: #0f6b3b;
+    background: var(--accent-strong);
     outline: none;
   }
 

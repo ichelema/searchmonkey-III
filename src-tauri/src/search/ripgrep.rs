@@ -78,9 +78,14 @@ impl RipgrepSidecarProvider {
             args.push(request.max_file_size.trim().to_string());
         }
 
-        if request.context_lines > 0 {
-            args.push("--context".to_string());
-            args.push(request.context_lines.min(20).to_string());
+        if request.context_before > 0 {
+            args.push("--before-context".to_string());
+            args.push(request.context_before.min(20).to_string());
+        }
+
+        if request.context_after > 0 {
+            args.push("--after-context".to_string());
+            args.push(request.context_after.min(20).to_string());
         }
 
         let SearchRequest {
@@ -234,7 +239,8 @@ impl RipgrepSidecarProvider {
     pub fn parse_match(line: &[u8]) -> Option<SearchMatch> {
         let json: Value = serde_json::from_slice(line).ok()?;
 
-        if json["type"] != "match" {
+        let is_context = json["type"] == "context";
+        if json["type"] != "match" && !is_context {
             return None;
         }
 
@@ -268,6 +274,7 @@ impl RipgrepSidecarProvider {
             meta_outdated: None,
             line_number: data["line_number"].as_u64().unwrap_or(0),
             line_text,
+            is_context,
             submatches,
             absolute_offset,
             file_size: None,
@@ -454,7 +461,42 @@ pub fn sidecar_path(program: &str) -> Result<PathBuf> {
         }
     }
 
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if program == "rg" && !command_path.exists() {
+        return extracted_embedded_rg();
+    }
+
     Ok(command_path)
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+static EMBEDDED_RG: &[u8] = include_bytes!("../../binaries/rg-x86_64-unknown-linux-gnu");
+
+/// Estrae la copia di ripgrep inglobata nell'eseguibile, così l'app
+/// funziona come singolo file senza il sidecar `rg` accanto al binario.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn extracted_embedded_rg() -> Result<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let cache_dir = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+        .ok_or_else(|| anyhow::anyhow!("Cannot resolve the cache directory"))?
+        .join("searchmonkey-3");
+    let rg_path = cache_dir.join("rg");
+
+    let up_to_date = std::fs::metadata(&rg_path)
+        .map(|meta| meta.len() == EMBEDDED_RG.len() as u64)
+        .unwrap_or(false);
+    if !up_to_date {
+        std::fs::create_dir_all(&cache_dir)?;
+        let tmp_path = cache_dir.join("rg.tmp");
+        std::fs::write(&tmp_path, EMBEDDED_RG)?;
+        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::rename(&tmp_path, &rg_path)?;
+    }
+
+    Ok(rg_path)
 }
 
 fn normalize_glob_pattern(pattern: String) -> String {
@@ -644,6 +686,35 @@ mod tests {
     }
 
     #[test]
+    fn parses_context_events_as_context_rows() {
+        let context_line = br#"{"type":"context","data":{"path":{"text":"/tmp/a.rs"},"lines":{"text":"let x = 1;\n"},"line_number":7,"absolute_offset":42,"submatches":[]}}"#;
+        let parsed = super::RipgrepSidecarProvider::parse_match(context_line).unwrap();
+        assert!(parsed.is_context);
+        assert_eq!(parsed.line_number, 7);
+        assert_eq!(parsed.line_text, "let x = 1;");
+        assert!(parsed.submatches.is_empty());
+
+        let match_line = br#"{"type":"match","data":{"path":{"text":"/tmp/a.rs"},"lines":{"text":"let x = 1;\n"},"line_number":7,"absolute_offset":42,"submatches":[{"match":{"text":"x"},"start":4,"end":5}]}}"#;
+        let parsed = super::RipgrepSidecarProvider::parse_match(match_line).unwrap();
+        assert!(!parsed.is_context);
+
+        let summary_line = br#"{"type":"summary","data":{}}"#;
+        assert!(super::RipgrepSidecarProvider::parse_match(summary_line).is_none());
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    fn embedded_rg_extracts_and_runs() {
+        let rg_path = super::extracted_embedded_rg().unwrap();
+        let output = std::process::Command::new(&rg_path)
+            .arg("--version")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains("ripgrep"));
+    }
+
+    #[test]
     fn includes_match_source_extension_after_remap() {
         let filter = ResultPathFilter::from_request(&SearchRequest {
             query: "needle".to_string(),
@@ -655,7 +726,8 @@ mod tests {
             exclude_patterns: vec![],
             follow_symlinks: false,
             multiline: false,
-            context_lines: 0,
+            context_before: 0,
+            context_after: 0,
             min_file_size: String::new(),
             max_file_size: String::new(),
             modified_after: None,
@@ -683,7 +755,8 @@ mod tests {
             exclude_patterns: vec!["*.jpg".to_string()],
             follow_symlinks: false,
             multiline: false,
-            context_lines: 0,
+            context_before: 0,
+            context_after: 0,
             min_file_size: String::new(),
             max_file_size: String::new(),
             modified_after: None,

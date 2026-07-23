@@ -117,9 +117,9 @@
     max-width: calc(100vw - 24px);
     max-height: min(760px, calc(100vh - 32px));
     grid-template-rows: auto minmax(0, 1fr);
-    border: 1px solid #dfe5e0;
+    border: 1px solid var(--border);
     border-radius: 12px;
-    background: #ffffff;
+    background: var(--panel);
     box-shadow: 0 18px 38px rgba(30, 37, 45, 0.16);
     overflow: hidden;
   }
@@ -129,14 +129,14 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    border-bottom: 1px solid #e5e9ed;
+    border-bottom: 1px solid var(--border-subtle);
     padding: 14px 16px;
   }
 
   h2,
   h3 {
     margin: 0;
-    color: #1c232b;
+    color: var(--text);
   }
 
   h2 {
@@ -151,11 +151,11 @@
 
   button {
     height: 32px;
-    border: 1px solid #cbd4dc;
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 0 12px;
-    color: #1c232b;
-    background: #f8fafb;
+    color: var(--text);
+    background: var(--surface);
     font: inherit;
     font-size: 13px;
     font-weight: 700;
@@ -164,7 +164,7 @@
 
   button:hover,
   button:focus-visible {
-    border-color: #9facb8;
+    border-color: var(--border-strong);
     outline: none;
   }
 
@@ -184,7 +184,7 @@
 
   .rows {
     display: grid;
-    border: 1px solid #e5e9ed;
+    border: 1px solid var(--border-subtle);
     border-radius: 8px;
     overflow: hidden;
   }
@@ -195,7 +195,7 @@
     gap: 10px;
     align-items: center;
     min-height: 34px;
-    border-bottom: 1px solid #edf0f3;
+    border-bottom: 1px solid var(--border-subtle);
     padding: 6px 10px;
   }
 
@@ -204,7 +204,7 @@
   }
 
   code {
-    color: #0f5f3a;
+    color: var(--accent-strong);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     font-weight: 750;
@@ -213,7 +213,7 @@
 
   span,
   .note {
-    color: #59656f;
+    color: var(--muted);
     font-size: 13px;
     line-height: 1.35;
   }
@@ -229,10 +229,10 @@
 
   .note {
     margin: 0;
-    border: 1px solid #dce8df;
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 10px 12px;
-    background: #f7fbf8;
+    background: var(--surface);
     font-weight: 650;
   }
 

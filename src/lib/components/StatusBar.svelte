@@ -139,7 +139,7 @@
   }
 
   .metrics span {
-    color: #7d8790;
+    color: var(--muted);
     font-weight: 550;
   }
 
@@ -150,7 +150,7 @@
     border: 0;
     border-left: 1px solid var(--border);
     padding: 0 0 0 8px;
-    color: #7d8790;
+    color: var(--muted);
     background: transparent;
     cursor: pointer;
     font: inherit;
@@ -169,15 +169,15 @@
   }
 
   .plugin-triangle.warning {
-    color: #c27a15;
+    color: var(--warn-text);
   }
 
   .plugin-triangle.blocked {
-    color: #c24b3a;
+    color: var(--danger);
   }
 
   .tagline {
-    color: #8b949d;
+    color: var(--muted);
     font-weight: 500;
   }
 

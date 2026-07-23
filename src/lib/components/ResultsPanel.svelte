@@ -19,7 +19,7 @@
         height: number;
       }
     | {
-        type: 'match';
+        type: 'match' | 'context';
         key: string;
         match: SearchMatch;
         top: number;
@@ -59,6 +59,7 @@
 
   let {
     groups,
+    contextByFile = new Map<string, SearchMatch[]>(),
     query,
     searchPath,
     regex,
@@ -73,6 +74,7 @@
     onReindex
   }: {
     groups: FileResultGroup[];
+    contextByFile?: Map<string, SearchMatch[]>;
     query: string;
     searchPath: string;
     regex: boolean;
@@ -95,7 +97,7 @@
   let scrubPreviewTop = $state(0);
   let scrubPreviewLeft = $state(0);
 
-  const rows = $derived.by(() => buildRows(groups));
+  const rows = $derived.by(() => buildRows(groups, contextByFile));
   const fileRows = $derived.by(() => rows.filter((row) => row.type === 'file'));
   const matchTotal = $derived.by(() => groups.reduce((total, group) => total + group.matches.length, 0));
   const currentSortMode = $derived.by(() => {
@@ -143,7 +145,10 @@
     return `${match.path}:${match.line_number}:${ranges}:${match.line_text}`;
   }
 
-  function buildRows(resultGroups: FileResultGroup[]): ResultRow[] {
+  function buildRows(
+    resultGroups: FileResultGroup[],
+    contextRows: Map<string, SearchMatch[]>
+  ): ResultRow[] {
     const nextRows: ResultRow[] = [];
     let top = 0;
 
@@ -160,10 +165,10 @@
         top += FILE_ROW_HEIGHT;
       }
 
-      for (const [index, match] of group.matches.entries()) {
+      for (const [index, match] of mergeWithContext(group, contextRows.get(group.path)).entries()) {
         nextRows.push({
-          type: 'match',
-          key: `match:${group.path}:${match.line_number}:${index}`,
+          type: match.is_context ? 'context' : 'match',
+          key: `${match.is_context ? 'context' : 'match'}:${group.path}:${match.line_number}:${index}`,
           match,
           top,
           height: MATCH_ROW_HEIGHT
@@ -173,6 +178,20 @@
     }
 
     return nextRows;
+  }
+
+  function mergeWithContext(
+    group: FileResultGroup,
+    contextRows: SearchMatch[] | undefined
+  ): SearchMatch[] {
+    if (!contextRows?.length) return group.matches;
+
+    const matchLineNumbers = new Set(group.matches.map((match) => match.line_number));
+    const merged = [
+      ...group.matches,
+      ...contextRows.filter((row) => !matchLineNumbers.has(row.line_number))
+    ];
+    return merged.sort((a, b) => a.line_number - b.line_number);
   }
 
   function sameMatch(a: SearchMatch | null, b: SearchMatch) {
@@ -590,18 +609,16 @@
     const key = matchKey(selected);
     if (key === lastScrolledMatch) return;
 
-    lastScrolledMatch = key;
     const selectedRow = rows.find((row) => row.type === 'match' && sameMatch(selected, row.match));
     if (!selectedRow) return;
 
-    const visibleTop = resultsElement.scrollTop;
-    const visibleBottom = visibleTop + resultsElement.clientHeight;
-    const rowTop = selectedRow.top;
-    const rowBottom = selectedRow.top + selectedRow.height;
-
-    if (rowTop >= visibleTop && rowBottom <= visibleBottom) return;
-
-    resultsElement.scrollTop = Math.max(0, selectedRow.top - resultsElement.clientHeight / 2);
+    // Marca come scrollato solo a riga trovata: se le righe non sono ancora
+    // pronte l'effect riproverà al prossimo aggiornamento invece di perdersi.
+    lastScrolledMatch = key;
+    resultsElement.scrollTop = Math.max(
+      0,
+      selectedRow.top + selectedRow.height / 2 - resultsElement.clientHeight / 2
+    );
     updateScrollMetrics();
   });
 </script>
@@ -695,7 +712,7 @@
     <div class="virtual-list" style:height={`${totalHeight}px`}>
       {#each visibleRows as row (row.key)}
         {#if row.type === 'file'}
-          <div class="file-row" style:transform={`translateY(${row.top}px)`}>
+          <div class="file-row" class:active={selected?.path === row.path} style:transform={`translateY(${row.top}px)`}>
             <div class="file-title">
               <strong title={row.path}>{filename(row.path)}</strong>
               <span title={parentPath(row.path)}>{parentPath(row.path)}</span>
@@ -712,6 +729,15 @@
                 </div>
               </details>
             </span>
+          </div>
+        {:else if row.type === 'context'}
+          <div class="match-shell" style:transform={`translateY(${row.top}px)`}>
+            <div class="match-row context-row" class:no-lines={!options.show_line_numbers}>
+              {#if options.show_line_numbers}
+                <span class="line">{row.match.line_number}</span>
+              {/if}
+              <span class="snippet">{displayLineText(row.match.line_text)}</span>
+            </div>
           </div>
         {:else}
           <div class="match-shell" style:transform={`translateY(${row.top}px)`}>
@@ -734,6 +760,9 @@
                       <span>{part.text}</span>
                     {/if}
                   {/each}
+                  {#if row.match.display_context}
+                    <span class="context-badge">{row.match.display_context}</span>
+                  {/if}
                 </span>
               </button>
           </div>
@@ -817,12 +846,16 @@
     height: 28px;
     border: 1px solid var(--border);
     border-radius: 5px;
-    padding: 0 7px;
+    padding: 0 22px 0 7px;
     color: var(--text);
-    background: var(--input);
+    background-color: var(--input);
     font: inherit;
     font-size: 11px;
     font-weight: 750;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888f9b' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 7px center;
   }
 
   .toggle-control {
@@ -1025,10 +1058,20 @@
     align-items: center;
     height: 44px;
     border-bottom: 1px solid var(--border-subtle);
+    border-left: 3px solid transparent;
     border-radius: 5px 5px 0 0;
-    padding: 6px 11px;
+    padding: 6px 11px 6px 8px;
     background: var(--panel);
     user-select: none;
+  }
+
+  .file-row.active {
+    border-left-color: var(--accent);
+    background: var(--selection-strong);
+  }
+
+  .file-row.active .file-title strong {
+    color: var(--accent-strong);
   }
 
   .file-title {
@@ -1052,13 +1095,13 @@
   }
 
   .file-title span {
-    color: #7a8490;
+    color: var(--muted);
     font-size: 11px;
     font-weight: 500;
   }
 
   .count {
-    color: #7f8a94;
+    color: var(--muted);
     font-size: 12px;
     font-weight: 650;
     text-align: center;
@@ -1164,6 +1207,23 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .match-row.context-row {
+    color: var(--muted);
+    cursor: default;
+  }
+
+  .context-badge {
+    margin-left: 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 0 5px;
+    color: var(--muted);
+    background: var(--selection);
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
   .match-row:last-child {
     border-bottom: 0;
   }
@@ -1189,7 +1249,7 @@
   }
 
   .line {
-    color: #88939d;
+    color: var(--muted);
     font-variant-numeric: tabular-nums;
     text-align: right;
   }
@@ -1219,7 +1279,7 @@
   mark {
     border-radius: 4px;
     padding: 0 2px;
-    color: #241800;
+    color: var(--text);
     background: var(--highlight);
   }
 
