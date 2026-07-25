@@ -87,7 +87,6 @@
   let aboutMenuEventUnlisten: (() => void) | null = null;
   let regexCheatSheetMenuEventUnlisten: (() => void) | null = null;
   let releaseNotesMenuEventUnlisten: (() => void) | null = null;
-  let websiteMenuEventUnlisten: (() => void) | null = null;
   let reportIssueMenuEventUnlisten: (() => void) | null = null;
   let checkForUpdatesMenuEventUnlisten: (() => void) | null = null;
   let managePluginsMenuEventUnlisten: (() => void) | null = null;
@@ -163,8 +162,7 @@
   const SAVED_SEARCHES_KEY = 'searchmonkey:saved-searches';
   const DISMISSED_UPDATE_KEY = 'searchmonkey:dismissed-update';
   const UPDATE_DISMISS_MS = 3 * 24 * 60 * 60 * 1000;
-  const RELEASE_NOTES_URL = 'https://github.com/cottrela/searchmonkey-v3/releases';
-  const WEBSITE_URL = 'https://searchmonkey.dev';
+  const RELEASE_NOTES_URL = 'https://github.com/sphynx79/searchmonkey-III/releases';
   const REPORT_ISSUE_URL = 'https://github.com/sphynx79/searchmonkey-III/issues';
   const FILE_TYPE_PATTERNS: Record<string, string[]> = {
     text: ['*.txt', '*.md', '*.markdown', '*.rst', '*.csv', '*.tsv', '*.json', '*.yaml', '*.yml', '*.toml', '*.xml'],
@@ -503,11 +501,6 @@
     }).then((unlisten) => {
       releaseNotesMenuEventUnlisten = unlisten;
     });
-    void listen('open-searchmonkey-website', () => {
-      void openUrl(WEBSITE_URL).catch(() => {});
-    }).then((unlisten) => {
-      websiteMenuEventUnlisten = unlisten;
-    });
     void listen('open-report-issue', () => {
       void openUrl(REPORT_ISSUE_URL).catch(() => {});
     }).then((unlisten) => {
@@ -586,8 +579,6 @@
       regexCheatSheetMenuEventUnlisten = null;
       releaseNotesMenuEventUnlisten?.();
       releaseNotesMenuEventUnlisten = null;
-      websiteMenuEventUnlisten?.();
-      websiteMenuEventUnlisten = null;
       reportIssueMenuEventUnlisten?.();
       reportIssueMenuEventUnlisten = null;
       checkForUpdatesMenuEventUnlisten?.();

@@ -35,7 +35,6 @@ const DIRECTORY_SUGGESTION_LIMIT: usize = 500;
 const ABOUT_SEARCHMONKEY_MENU_ID: &str = "about-searchmonkey-iii";
 const REGEX_CHEAT_SHEET_MENU_ID: &str = "regex-cheat-sheet";
 const RELEASE_NOTES_MENU_ID: &str = "release-notes";
-const WEBSITE_MENU_ID: &str = "searchmonkey-website";
 const REPORT_ISSUE_MENU_ID: &str = "report-issue";
 const CHECK_FOR_UPDATES_MENU_ID: &str = "check-for-updates";
 const BROWSE_PLUGINS_MENU_ID: &str = "browse-plugins";
@@ -1073,7 +1072,6 @@ pub fn run() {
                 .text(CHECK_FOR_UPDATES_MENU_ID, "Check for Updates...")
                 .separator()
                 .text(RELEASE_NOTES_MENU_ID, "Release Notes")
-                .text(WEBSITE_MENU_ID, "Searchmonkey Website")
                 .text(REPORT_ISSUE_MENU_ID, "Report an Issue")
                 .build()?;
             let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -1122,10 +1120,6 @@ pub fn run() {
 
             if event.id() == RELEASE_NOTES_MENU_ID {
                 let _ = app.emit("open-release-notes", ());
-            }
-
-            if event.id() == WEBSITE_MENU_ID {
-                let _ = app.emit("open-searchmonkey-website", ());
             }
 
             if event.id() == REPORT_ISSUE_MENU_ID {

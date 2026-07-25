@@ -4,11 +4,9 @@ export type ReleaseAsset = {
 };
 
 export type LatestReleaseResponse = {
-  release?: {
-    tag_name?: string;
-    html_url?: string;
-    assets?: ReleaseAsset[];
-  };
+  tag_name?: string;
+  html_url?: string;
+  assets?: ReleaseAsset[];
 };
 
 export type AvailableUpdate = {
@@ -19,7 +17,7 @@ export type AvailableUpdate = {
   downloadName: string;
 };
 
-const LATEST_RELEASE_ENDPOINT = 'https://searchmonkey.dev/api/latest-release';
+const LATEST_RELEASE_ENDPOINT = 'https://api.github.com/repos/sphynx79/searchmonkey-III/releases/latest';
 
 export async function getAvailableUpdate(
   currentVersion: string,
@@ -30,12 +28,16 @@ export async function getAvailableUpdate(
     headers: { accept: 'application/json' }
   });
 
+  // GitHub risponde 404 finché il fork non ha alcuna release pubblicata
+  if (response.status === 404) {
+    return null;
+  }
+
   if (!response.ok) {
     throw new Error(`Latest release check failed with ${response.status}`);
   }
 
-  const data = (await response.json()) as LatestReleaseResponse;
-  const release = data.release;
+  const release = (await response.json()) as LatestReleaseResponse;
   const tagName = release?.tag_name?.trim();
 
   if (!release || !tagName || compareVersions(tagName, currentVersion) <= 0) {
@@ -43,7 +45,7 @@ export async function getAvailableUpdate(
   }
 
   const asset = selectBestAsset(release.assets ?? []);
-  const releaseUrl = release.html_url ?? 'https://github.com/cottrela/searchmonkey-III/releases';
+  const releaseUrl = release.html_url ?? 'https://github.com/sphynx79/searchmonkey-III/releases';
 
   return {
     currentVersion,
