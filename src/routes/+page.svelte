@@ -165,7 +165,7 @@
   const UPDATE_DISMISS_MS = 3 * 24 * 60 * 60 * 1000;
   const RELEASE_NOTES_URL = 'https://github.com/cottrela/searchmonkey-v3/releases';
   const WEBSITE_URL = 'https://searchmonkey.dev';
-  const REPORT_ISSUE_URL = 'https://github.com/cottrela/searchmonkey-v3/issues';
+  const REPORT_ISSUE_URL = 'https://github.com/sphynx79/searchmonkey-III/issues';
   const FILE_TYPE_PATTERNS: Record<string, string[]> = {
     text: ['*.txt', '*.md', '*.markdown', '*.rst', '*.csv', '*.tsv', '*.json', '*.yaml', '*.yml', '*.toml', '*.xml'],
     code: [
