@@ -15,24 +15,20 @@
   import StatusBar from '$lib/components/StatusBar.svelte';
   import {
     cancelSearch as cancelSearchCommand,
-    disconnectPurchaseConnection,
     getResults,
     getPluginIndexSummary,
     ignorePluginIssue,
     ignorePluginIssueType,
     installPluginPackage,
-    installPurchasedPlugin,
     pluginFolderPath,
     queuePluginScan,
     rebuildPluginIndex,
-    refreshPurchaseEntitlements,
     refreshPluginSupportedFiles,
     getSearchStatus,
     homeDir,
     listenSearchBufferUpdated,
     listenSearchStatusChanged,
     openFilePath,
-    pollPurchaseConnection,
     readFilePreview,
     revealFilePath,
     resetPluginCache,
@@ -41,7 +37,6 @@
     setPluginEnabled,
     setPluginIndexPaused,
     setPluginIssueTypeAutoIgnore,
-    startPurchaseEmailVerification,
     startSearch as startSearchCommand,
     uninstallPluginVersion,
     unignorePluginIssue
@@ -94,7 +89,6 @@
   let togglePluginIndexingMenuEventUnlisten: (() => void) | null = null;
   let rebuildPluginIndexMenuEventUnlisten: (() => void) | null = null;
   let openPluginFolderMenuEventUnlisten: (() => void) | null = null;
-  let appAuthUpdatedEventUnlisten: (() => void) | null = null;
   let previewData = $state<FilePreview | null>(null);
   let previewError = $state('');
   let loadedPreviewKey = '';
@@ -140,11 +134,8 @@
   let pluginStatusError = $state('');
   let pluginStatusPollTimer: ReturnType<typeof setTimeout> | null = null;
   let pluginStatusPollInFlight = false;
-  let purchasePollTimer: ReturnType<typeof setTimeout> | null = null;
-  let purchasePollInFlight = false;
   let reindexingPaths = $state<Set<string>>(new Set());
   let appVisible = $state(true);
-  let marketplaceInstallInFlight = $state(false);
   const reindexFeedbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const PREVIEW_CONTEXT_LINES = 50;
@@ -542,13 +533,6 @@
     }).then((unlisten) => {
       openPluginFolderMenuEventUnlisten = unlisten;
     });
-    void listen('app-auth-updated', () => {
-      if (pluginDialogOpen || pluginStatus) {
-        void refreshPluginStatus(true);
-      }
-    }).then((unlisten) => {
-      appAuthUpdatedEventUnlisten = unlisten;
-    });
     homeDir()
       .then((home) => {
         defaultHomePath = home;
@@ -570,7 +554,6 @@
       fullMedia.removeEventListener('change', syncConstraint);
       clearStatusPollTimer();
       clearPluginStatusPollTimer();
-      clearPurchasePollTimer();
       clearElapsedTimer();
       clearResultFlushTimer();
       aboutMenuEventUnlisten?.();
@@ -593,8 +576,6 @@
       rebuildPluginIndexMenuEventUnlisten = null;
       openPluginFolderMenuEventUnlisten?.();
       openPluginFolderMenuEventUnlisten = null;
-      appAuthUpdatedEventUnlisten?.();
-      appAuthUpdatedEventUnlisten = null;
       clearReindexFeedbackTimers();
       void cleanupSearchListeners();
     };
@@ -639,36 +620,12 @@
     startPluginStatusPolling();
   }
 
-  function shouldPollPurchaseConnection() {
-    return pluginDialogOpen && pluginStatus?.purchase_connection.state === 'pending';
-  }
-
-  function clearPurchasePollTimer() {
-    if (!purchasePollTimer) return;
-    clearTimeout(purchasePollTimer);
-    purchasePollTimer = null;
-  }
-
-  function startPurchasePollTimer() {
-    clearPurchasePollTimer();
-    if (!shouldPollPurchaseConnection()) return;
-    purchasePollTimer = setTimeout(() => {
-      purchasePollTimer = null;
-      void pollPendingPurchaseConnection();
-    }, 1000);
-  }
-
   $effect(() => {
     if (pluginDialogOpen && appVisible && !pluginStatus) {
       void refreshPluginStatus();
       return;
     }
     syncPluginStatusPolling();
-    if (shouldPollPurchaseConnection()) {
-      if (!purchasePollInFlight && !purchasePollTimer) startPurchasePollTimer();
-    } else {
-      clearPurchasePollTimer();
-    }
   });
 
   async function refreshPluginStatus(force = false) {
@@ -683,7 +640,6 @@
       pluginStatusPollInFlight = false;
       clearPluginStatusPollTimer();
       if (shouldPollPluginStatus()) startPluginStatusPolling();
-      if (shouldPollPurchaseConnection()) startPurchasePollTimer();
     }
   }
 
@@ -755,74 +711,6 @@
     } catch (error) {
       pluginStatusError = normalizeError(error);
       throw error;
-    }
-  }
-
-  async function refreshPurchases() {
-    try {
-      pluginStatus = await refreshPurchaseEntitlements();
-      pluginStatusError = '';
-      pluginDialogOpen = true;
-    } catch (error) {
-      pluginStatusError = normalizeError(error);
-      throw error;
-    }
-  }
-
-  async function startPurchaseVerification(email: string) {
-    try {
-      pluginStatus = await startPurchaseEmailVerification(email);
-      pluginStatusError = '';
-      pluginDialogOpen = true;
-      void pollPendingPurchaseConnection();
-    } catch (error) {
-      pluginStatusError = normalizeError(error);
-      throw error;
-    }
-  }
-
-  async function pollPendingPurchaseConnection() {
-    if (!shouldPollPurchaseConnection() || purchasePollInFlight) return;
-    purchasePollInFlight = true;
-    try {
-      pluginStatus = await pollPurchaseConnection();
-      pluginStatusError = '';
-    } catch (error) {
-      pluginStatusError = normalizeError(error);
-    } finally {
-      purchasePollInFlight = false;
-      if (shouldPollPurchaseConnection()) startPurchasePollTimer();
-    }
-  }
-
-  async function disconnectPurchases() {
-    try {
-      pluginStatus = await disconnectPurchaseConnection();
-      pluginStatusError = '';
-      pluginDialogOpen = true;
-      clearPurchasePollTimer();
-    } catch (error) {
-      pluginStatusError = normalizeError(error);
-      throw error;
-    }
-  }
-
-  async function installMarketplacePlugin(pluginId: string) {
-    if (marketplaceInstallInFlight) return;
-    marketplaceInstallInFlight = true;
-    try {
-      const result = await installPurchasedPlugin(pluginId);
-      pluginStatus = result.status;
-      pluginDialogSelection = result.plugin_id;
-      pluginDialogPage = 'installed';
-      pluginStatusError = '';
-      pluginDialogOpen = true;
-    } catch (error) {
-      pluginStatusError = normalizeError(error);
-      await refreshPluginStatus(true).catch(() => {});
-      throw error;
-    } finally {
-      marketplaceInstallInFlight = false;
     }
   }
 
@@ -2164,11 +2052,6 @@
       onResetPlugin={resetSelectedPluginCache}
       onSetPluginEnabled={updatePluginEnabled}
       onInstallPlugin={installPluginArchive}
-      onInstallMarketplacePlugin={installMarketplacePlugin}
-      onStartPurchaseVerification={startPurchaseVerification}
-      onPollPendingPurchaseConnection={pollPendingPurchaseConnection}
-      onRefreshPurchases={refreshPurchases}
-      onDisconnectPurchases={disconnectPurchases}
       onRetryFailure={retryPluginFailure}
       onOpenFailure={openPluginFailure}
       onRevealFailure={revealPluginFailure}

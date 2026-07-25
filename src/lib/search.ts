@@ -154,22 +154,3 @@ export async function uninstallPluginVersion(pluginId: string, version: string):
   return invoke<PluginIndexSummary>('uninstall_plugin_version', { pluginId, version });
 }
 
-export async function refreshPurchaseEntitlements(): Promise<PluginIndexSummary> {
-  return invoke<PluginIndexSummary>('refresh_purchase_entitlements');
-}
-
-export async function startPurchaseEmailVerification(email: string): Promise<PluginIndexSummary> {
-  return invoke<PluginIndexSummary>('start_purchase_email_verification', { email });
-}
-
-export async function pollPurchaseConnection(): Promise<PluginIndexSummary> {
-  return invoke<PluginIndexSummary>('poll_purchase_connection');
-}
-
-export async function disconnectPurchaseConnection(): Promise<PluginIndexSummary> {
-  return invoke<PluginIndexSummary>('disconnect_purchase_connection');
-}
-
-export async function installPurchasedPlugin(pluginId: string): Promise<InstallPluginResult> {
-  return invoke<InstallPluginResult>('install_purchased_plugin', { pluginId });
-}

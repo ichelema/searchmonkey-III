@@ -5,20 +5,15 @@
   import { getPluginIssueCounts, getPluginIssues } from '$lib/search';
   import type {
     InstalledPluginInfo,
-    MarketplacePluginSummary,
     PluginHealthSummary,
     PluginIndexSummary,
     PluginIssue,
     PluginIssueCount,
-    PurchaseConnectionSummary,
     PluginValidationError
   } from '$lib/types';
 
-  const WEBSITE_URL = 'https://searchmonkey.dev';
-  const PLUGINS_URL = `${WEBSITE_URL}/plugins`;
 
   type PluginDialogPage = 'installed' | 'available' | 'updates' | 'install';
-  type MarketplaceBadgeTone = 'owned' | 'installed' | 'update' | 'development' | 'neutral';
   type IssueCategory = {
     code: string;
     label: string;
@@ -46,11 +41,6 @@
     onResetPlugin,
     onSetPluginEnabled,
     onInstallPlugin,
-    onInstallMarketplacePlugin,
-    onStartPurchaseVerification,
-    onPollPendingPurchaseConnection,
-    onRefreshPurchases,
-    onDisconnectPurchases,
     onRetryFailure,
     onOpenFailure,
     onRevealFailure,
@@ -74,11 +64,6 @@
     onResetPlugin?: (pluginId: string) => void | Promise<void>;
     onSetPluginEnabled?: (pluginId: string, enabled: boolean) => void | Promise<void>;
     onInstallPlugin?: (archivePath: string) => void | Promise<void>;
-    onInstallMarketplacePlugin?: (pluginId: string) => void | Promise<void>;
-    onStartPurchaseVerification?: (email: string) => void | Promise<void>;
-    onPollPendingPurchaseConnection?: () => void | Promise<void>;
-    onRefreshPurchases?: () => void | Promise<void>;
-    onDisconnectPurchases?: () => void | Promise<void>;
     onRetryFailure?: (path: string) => void | Promise<void>;
     onOpenFailure?: (path: string) => void | Promise<void>;
     onRevealFailure?: (path: string) => void | Promise<void>;
@@ -114,12 +99,7 @@
   let installStatus = $state<'ready' | 'installing' | 'success' | 'failed'>('ready');
   let installMessage = $state('');
   let installDropActive = $state(false);
-  let pendingMarketplaceInstalls = $state<Record<string, boolean>>({});
-  let purchasesActionPending = $state<'start' | 'poll' | 'refresh' | 'disconnect' | null>(null);
-  let purchaseEmail = $state('');
-  let editingPendingPurchaseEmail = $state(false);
   let pendingConfirmation = $state<PendingConfirmation | null>(null);
-  let missingDownloadUrlRefreshAttempted = $state(false);
   let dismissedValidationErrors = $state<Record<string, boolean>>({});
   let widgetErrorMessage = $state('');
   let widgetErrorPluginId = $state<string | null>(null);
@@ -130,34 +110,6 @@
 
   $effect(() => {
     currentPage = initialPage;
-  });
-
-  $effect(() => {
-    if (purchaseConnection.pending_email) {
-      purchaseEmail = purchaseConnection.pending_email;
-      return;
-    }
-    if (!purchaseEmail && purchaseConnection.email) {
-      purchaseEmail = purchaseConnection.email;
-    }
-  });
-
-  $effect(() => {
-    if (purchaseConnection.state !== 'pending') {
-      editingPendingPurchaseEmail = false;
-    }
-  });
-
-  $effect(() => {
-    if (purchaseConnection.state !== 'connected') {
-      missingDownloadUrlRefreshAttempted = false;
-      return;
-    }
-    if (missingDownloadUrlRefreshAttempted || purchasesActionPending || !onRefreshPurchases) return;
-    if (!marketplacePlugins.some((plugin) => plugin.owned && !plugin.download_url)) return;
-
-    missingDownloadUrlRefreshAttempted = true;
-    void runPurchaseRefresh();
   });
 
   $effect(() => {
@@ -187,19 +139,6 @@
   });
 
   const installedPlugins = $derived(status?.installed_plugins ?? []);
-  const purchaseConnection = $derived<PurchaseConnectionSummary>(
-    status?.purchase_connection ?? {
-      state: 'not_connected',
-      email: null,
-      pending_email: null,
-      pending_expires_at: null,
-      last_synced_at: null,
-      has_cached_entitlements: false,
-      status_message: null,
-      storage_warning: null
-    }
-  );
-  const marketplacePlugins = $derived<MarketplacePluginSummary[]>(status?.marketplace_plugins ?? []);
   const activeValidationError = $derived.by<PluginValidationError | null>(() => {
     const errors = status?.plugin_validation_errors ?? [];
     return errors.find((error) => !dismissedValidationErrors[validationErrorKey(error)]) ?? null;
@@ -250,10 +189,6 @@
     }
     return grouped;
   });
-  const availableMarketplacePlugins = $derived.by(() => marketplacePlugins);
-  const updateMarketplacePlugins = $derived.by(() =>
-    marketplacePlugins.filter((plugin) => plugin.owned && marketplaceAction(plugin).action === 'update')
-  );
   const autoIgnoredIssueCodes = $derived.by<Set<string>>(() => {
     if (!status || !selectedPluginIdValue) return new Set();
     return new Set(
@@ -703,197 +638,6 @@
     currentPage = page;
   }
 
-  function installedVersionsForMarketplacePlugin(pluginId: string) {
-    return installedPluginById.get(pluginId) ?? [];
-  }
-
-  function marketplaceAction(plugin: MarketplacePluginSummary) {
-    const activeInstalled = activeInstalledMarketplaceVersion(plugin);
-    if (purchaseConnection.state === 'expired') {
-      return { action: 'reconnect', label: 'Reconnect purchases' } as const;
-    }
-    if (purchaseConnection.state === 'pending') {
-      return { action: 'pending', label: 'Waiting for verification' } as const;
-    }
-    if (purchaseConnection.state !== 'connected') {
-      return { action: 'connect', label: 'Connect purchases' } as const;
-    }
-    if (!plugin.owned) {
-      return { action: 'buy', label: 'Buy' } as const;
-    }
-    if (!plugin.download_url) {
-      return { action: 'website', label: 'Open website' } as const;
-    }
-    if (!activeInstalled) {
-      return { action: 'install', label: 'Install plugin' } as const;
-    }
-    if (!plugin.latest_version) {
-      return { action: 'reinstall', label: 'Reinstall' } as const;
-    }
-    const compare = activeInstalled.version.localeCompare(plugin.latest_version, undefined, { numeric: true });
-    if (compare < 0) {
-      return { action: 'update', label: 'Update' } as const;
-    }
-    return { action: 'reinstall', label: 'Reinstall' } as const;
-  }
-
-  function activeInstalledMarketplaceVersion(plugin: MarketplacePluginSummary) {
-    const installedVersions = installedVersionsForMarketplacePlugin(plugin.plugin_id);
-    return installedVersions.find((item) => item.is_active) ?? installedVersions[0] ?? null;
-  }
-
-  function marketplaceBadges(plugin: MarketplacePluginSummary) {
-    const badges: Array<{ label: string; tone: MarketplaceBadgeTone }> = [];
-    const installed = activeInstalledMarketplaceVersion(plugin);
-    const relation = marketplaceVersionRelation(plugin);
-    if (plugin.owned) badges.push({ label: 'Owned', tone: 'owned' });
-    if (installed) badges.push({ label: 'Installed', tone: 'installed' });
-    if (plugin.owned && !installed) badges.push({ label: 'Not installed', tone: 'neutral' });
-    if (relation === 'behind') badges.push({ label: 'Update available', tone: 'update' });
-    if (relation === 'ahead') badges.push({ label: 'Ahead of catalog', tone: 'development' });
-    if (installed && isDevelopmentVersion(installed.version)) badges.push({ label: 'Development build', tone: 'development' });
-    return badges;
-  }
-
-  function marketplaceActionIsPrimary(plugin: MarketplacePluginSummary) {
-    const action = marketplaceAction(plugin).action;
-    return action === 'install' || action === 'reinstall' || action === 'update';
-  }
-
-  function marketplaceActionIsDisabled(plugin: MarketplacePluginSummary) {
-    const action = marketplaceAction(plugin).action;
-    return action === 'pending';
-  }
-
-  function compareVersions(installedVersion: string, catalogVersion: string) {
-    return installedVersion.localeCompare(catalogVersion, undefined, { numeric: true });
-  }
-
-  function isDevelopmentVersion(version: string) {
-    return /(?:^|[.-])(dev|alpha|beta|rc|preview)(?:[.-]|$)/i.test(version);
-  }
-
-  function marketplaceVersionRelation(plugin: MarketplacePluginSummary) {
-    const installed = activeInstalledMarketplaceVersion(plugin);
-    if (!installed) return 'not_installed' as const;
-    if (!plugin.latest_version) return 'no_catalog' as const;
-    const compare = compareVersions(installed.version, plugin.latest_version);
-    if (compare > 0) return 'ahead' as const;
-    if (compare < 0) return 'behind' as const;
-    return 'current' as const;
-  }
-
-  function installedVersionLabel(plugin: MarketplacePluginSummary) {
-    const installed = activeInstalledMarketplaceVersion(plugin);
-    if (!installed) return null;
-    return installed.version;
-  }
-
-  function catalogVersionLabel(plugin: MarketplacePluginSummary) {
-    return plugin.latest_version;
-  }
-
-  function purchaseStatusTitle() {
-    if (purchaseConnection.state === 'connected') return 'Purchases connected';
-    if (purchaseConnection.state === 'pending') return 'Verification email sent';
-    if (purchaseConnection.state === 'expired') return 'Verification expired';
-    return 'Connect your Searchmonkey purchases';
-  }
-
-  function formatRelativeConnectionDate(value: string | null | undefined) {
-    if (!value) return null;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return null;
-    return new Intl.DateTimeFormat(undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    }).format(date);
-  }
-
-  function showPendingPurchaseForm() {
-    editingPendingPurchaseEmail = true;
-  }
-
-  async function startEmailVerification() {
-    if (!onStartPurchaseVerification || purchasesActionPending) return;
-    const email = purchaseEmail.trim();
-    if (!email) return;
-    purchasesActionPending = 'start';
-    try {
-      await onStartPurchaseVerification(email);
-    } finally {
-      purchasesActionPending = null;
-    }
-  }
-
-  async function openPurchaseLink(plugin: MarketplacePluginSummary) {
-    await openUrl(plugin.buy_url ?? plugin.homepage_url ?? PLUGINS_URL);
-  }
-
-  async function openPluginCatalog() {
-    await openUrl(PLUGINS_URL);
-  }
-
-  async function runPurchaseRefresh() {
-    if (!onRefreshPurchases || purchasesActionPending) return;
-    purchasesActionPending = 'refresh';
-    try {
-      await onRefreshPurchases();
-    } finally {
-      purchasesActionPending = null;
-    }
-  }
-
-  async function runPurchasePoll() {
-    if (!onPollPendingPurchaseConnection || purchasesActionPending) return;
-    purchasesActionPending = 'poll';
-    try {
-      await onPollPendingPurchaseConnection();
-    } finally {
-      purchasesActionPending = null;
-    }
-  }
-
-  async function runPurchaseDisconnect() {
-    if (!onDisconnectPurchases || purchasesActionPending) return;
-    purchasesActionPending = 'disconnect';
-    try {
-      await onDisconnectPurchases();
-    } finally {
-      purchasesActionPending = null;
-    }
-  }
-
-  async function runMarketplaceAction(plugin: MarketplacePluginSummary) {
-    const decision = marketplaceAction(plugin);
-    if (decision.action === 'connect' || decision.action === 'reconnect') {
-      return;
-    }
-    if (decision.action === 'buy') {
-      await openPurchaseLink(plugin);
-      return;
-    }
-    if (decision.action === 'website') {
-      await openPurchaseLink(plugin);
-      return;
-    }
-    if (decision.action === 'pending' || !onInstallMarketplacePlugin) return;
-    if (pendingMarketplaceInstalls[plugin.plugin_id]) return;
-    pendingMarketplaceInstalls = { ...pendingMarketplaceInstalls, [plugin.plugin_id]: true };
-    try {
-      await onInstallMarketplacePlugin(plugin.plugin_id);
-      widgetErrorMessage = '';
-      widgetErrorPluginId = null;
-    } catch (error) {
-      widgetErrorMessage = pluginActionErrorMessage(error, 'Plugin install failed');
-      widgetErrorPluginId = plugin.plugin_id;
-    } finally {
-      pendingMarketplaceInstalls = { ...pendingMarketplaceInstalls, [plugin.plugin_id]: false };
-    }
-  }
 
   async function refreshSelectedPlugin() {
     if (!selectedPlugin || !onRefreshPlugin) return;
@@ -1055,8 +799,6 @@
 
       <nav class="nav-groups" aria-label="Plugin pages">
         <button type="button" class:active={currentPage === 'installed'} onclick={() => setPage('installed')}>Installed</button>
-        <button type="button" class:active={currentPage === 'available'} onclick={() => setPage('available')}>Library</button>
-        <button type="button" class:active={currentPage === 'updates'} onclick={() => setPage('updates')}>Updates</button>
         <button type="button" class:active={currentPage === 'install'} onclick={() => setPage('install')}>Install from file…</button>
       </nav>
 
@@ -1105,266 +847,6 @@
             <p class="muted">{installMessage}</p>
           {/if}
         </section>
-        </div>
-      {:else if currentPage === 'available'}
-        <div class="plugin-content marketplace-page">
-          <header class="detail-header">
-            <div>
-              <h3>Library</h3>
-              <p class="muted">Browse, install and update plugins connected to your Searchmonkey purchases.</p>
-            </div>
-          </header>
-
-          <section class:compact={purchaseConnection.state === 'connected'} class="panel purchase-panel">
-            <div class="purchase-copy">
-              {#if purchaseConnection.state === 'connected'}
-                <strong>Connected as {purchaseConnection.email ?? 'your account'}</strong>
-                <div class="purchase-meta">
-                  {#if formatRelativeConnectionDate(purchaseConnection.last_synced_at)}
-                    <span>Last synced {formatRelativeConnectionDate(purchaseConnection.last_synced_at)}</span>
-                  {/if}
-                  <span>Secure purchase verification via searchmonkey.dev</span>
-                </div>
-              {:else if purchaseConnection.state === 'pending' && !editingPendingPurchaseEmail}
-                <strong>{purchaseStatusTitle()}</strong>
-                <span class="purchase-email-display">{purchaseConnection.pending_email ?? purchaseEmail}</span>
-                <p class="muted">Check your inbox and click the verification link.</p>
-                <p class="purchase-trust">Secure purchase verification via searchmonkey.dev</p>
-              {:else if purchaseConnection.state === 'expired'}
-                <strong>{purchaseStatusTitle()}</strong>
-                <p class="muted">The verification link expired. Enter the checkout email to send a new one.</p>
-                <p class="purchase-trust">Secure purchase verification via searchmonkey.dev</p>
-              {:else}
-                <strong>{purchaseStatusTitle()}</strong>
-                <p class="muted">Connect your Searchmonkey purchases to install and update linked plugins in the app.</p>
-                <p class="purchase-trust">Secure purchase verification via searchmonkey.dev</p>
-              {/if}
-              {#if purchaseConnection.status_message}
-                <p class="muted">{purchaseConnection.status_message}</p>
-              {/if}
-              {#if purchaseConnection.storage_warning}
-                <p class="muted">{purchaseConnection.storage_warning}</p>
-              {/if}
-            </div>
-            <div class="purchase-actions">
-              {#if purchaseConnection.state === 'connected'}
-                <button type="button" class="secondary" disabled={purchasesActionPending !== null} onclick={runPurchaseRefresh}>
-                  {purchasesActionPending === 'refresh' ? 'Refreshing…' : 'Refresh'}
-                </button>
-                <button type="button" class="secondary" onclick={openPluginCatalog}>Browse plugins</button>
-                <button type="button" class="tertiary" disabled={purchasesActionPending !== null} onclick={runPurchaseDisconnect}>
-                  {purchasesActionPending === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
-                </button>
-              {:else}
-                {#if purchaseConnection.state === 'pending' && !editingPendingPurchaseEmail}
-                  <button type="button" class="secondary" disabled={purchasesActionPending !== null} onclick={startEmailVerification}>
-                    {purchasesActionPending === 'start' ? 'Sending…' : 'Resend email'}
-                  </button>
-                  <button type="button" class="tertiary" disabled={purchasesActionPending !== null} onclick={showPendingPurchaseForm}>
-                    Change email
-                  </button>
-                {:else}
-                  <label class="purchase-email-field">
-                    <span>Email used at checkout</span>
-                    <input
-                      type="email"
-                      bind:value={purchaseEmail}
-                      placeholder="buyer@example.com"
-                      autocomplete="email"
-                    />
-                  </label>
-                  <button type="button" class="primary-action purchase-submit" disabled={purchasesActionPending !== null || !purchaseEmail.trim()} onclick={startEmailVerification}>
-                    {purchaseConnection.state === 'expired'
-                      ? purchasesActionPending === 'start' ? 'Sending…' : 'Reconnect purchases'
-                      : purchasesActionPending === 'start' ? 'Sending…' : 'Connect purchases'}
-                  </button>
-                  <button type="button" class="secondary" onclick={openPluginCatalog}>Browse plugins</button>
-                {/if}
-              {/if}
-            </div>
-          </section>
-
-          {#if availableMarketplacePlugins.length}
-            <section class="marketplace-list">
-              {#each availableMarketplacePlugins as plugin}
-                <article class="panel marketplace-card">
-                  <div class="marketplace-copy">
-                    <div class="marketplace-heading">
-                      <h4>{plugin.name}</h4>
-                    </div>
-                    <div class="marketplace-version-list">
-                      {#if installedVersionLabel(plugin)}
-                        <div class="marketplace-version-row">
-                          <span class="marketplace-version-label">Installed locally</span>
-                          <span>{installedVersionLabel(plugin)}</span>
-                        </div>
-                      {/if}
-                      {#if catalogVersionLabel(plugin)}
-                        <div class="marketplace-version-row">
-                          <span class="marketplace-version-label">Catalog version</span>
-                          <span>{catalogVersionLabel(plugin)}</span>
-                        </div>
-                      {/if}
-                    </div>
-                    <div class="marketplace-badges">
-                      {#each marketplaceBadges(plugin) as badge}
-                        <span class={`state-badge ${badge.tone}`}>{badge.label}</span>
-                      {/each}
-                    </div>
-                  </div>
-                  <div class="marketplace-actions">
-                    <button
-                      type="button"
-                      class:secondary={!marketplaceActionIsPrimary(plugin)}
-                      class:primary-action={marketplaceActionIsPrimary(plugin)}
-                      disabled={pendingMarketplaceInstalls[plugin.plugin_id] || marketplaceActionIsDisabled(plugin)}
-                      onclick={() => runMarketplaceAction(plugin)}
-                    >
-                      {pendingMarketplaceInstalls[plugin.plugin_id] ? 'Installing…' : marketplaceAction(plugin).label}
-                    </button>
-                  </div>
-                </article>
-              {/each}
-            </section>
-          {:else if purchaseConnection.state === 'connected'}
-            <div class="empty-state plugin-content">
-              <h3>No plugins available</h3>
-              <p>Your connected library has no plugins to install right now.</p>
-              <div class="empty-actions">
-                <button type="button" class="secondary" onclick={openPluginCatalog}>Browse plugins</button>
-              </div>
-            </div>
-          {/if}
-        </div>
-      {:else if currentPage === 'updates'}
-        <div class="plugin-content marketplace-page">
-          <header class="detail-header">
-            <div>
-              <h3>Updates</h3>
-              <p class="muted">Installed plugins with newer versions available from your library.</p>
-            </div>
-          </header>
-
-          <section class="panel purchase-panel compact">
-            <div class="purchase-copy">
-              {#if purchaseConnection.state === 'connected'}
-                <strong>Connected as {purchaseConnection.email ?? 'your account'}</strong>
-                <div class="purchase-meta">
-                  {#if formatRelativeConnectionDate(purchaseConnection.last_synced_at)}
-                    <span>Last synced {formatRelativeConnectionDate(purchaseConnection.last_synced_at)}</span>
-                  {/if}
-                  <span>Secure purchase verification via searchmonkey.dev</span>
-                </div>
-              {:else if purchaseConnection.state === 'pending'}
-                <strong>Verification email sent</strong>
-                <span class="purchase-email-display">{purchaseConnection.pending_email ?? purchaseEmail}</span>
-              {:else if purchaseConnection.state === 'expired'}
-                <strong>Verification expired</strong>
-              {:else}
-                <strong>Connect purchases</strong>
-              {/if}
-            </div>
-            <div class="purchase-actions">
-              {#if purchaseConnection.state === 'connected'}
-                <button type="button" class="secondary" disabled={purchasesActionPending !== null} onclick={runPurchaseRefresh}>
-                  {purchasesActionPending === 'refresh' ? 'Refreshing…' : 'Refresh'}
-                </button>
-                <button type="button" class="secondary" onclick={openPluginCatalog}>Browse plugins</button>
-                <button type="button" class="tertiary" disabled={purchasesActionPending !== null} onclick={runPurchaseDisconnect}>
-                  {purchasesActionPending === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
-                </button>
-              {:else if purchaseConnection.state === 'pending'}
-                {#if !editingPendingPurchaseEmail}
-                  <button type="button" class="secondary" disabled={purchasesActionPending !== null} onclick={startEmailVerification}>
-                    {purchasesActionPending === 'start' ? 'Sending…' : 'Resend email'}
-                  </button>
-                  <button type="button" class="tertiary" disabled={purchasesActionPending !== null} onclick={showPendingPurchaseForm}>
-                    Change email
-                  </button>
-                {:else}
-                  <label class="purchase-email-field">
-                    <span>Email used at checkout</span>
-                    <input
-                      type="email"
-                      bind:value={purchaseEmail}
-                      placeholder="buyer@example.com"
-                      autocomplete="email"
-                    />
-                  </label>
-                  <button type="button" class="primary-action purchase-submit" disabled={purchasesActionPending !== null || !purchaseEmail.trim()} onclick={startEmailVerification}>
-                    {purchasesActionPending === 'start' ? 'Sending…' : 'Connect purchases'}
-                  </button>
-                {/if}
-              {:else}
-                <label class="purchase-email-field">
-                  <span>Email used at checkout</span>
-                  <input
-                    type="email"
-                    bind:value={purchaseEmail}
-                    placeholder="buyer@example.com"
-                    autocomplete="email"
-                  />
-                </label>
-                <button type="button" class="primary-action purchase-submit" disabled={purchasesActionPending !== null || !purchaseEmail.trim()} onclick={startEmailVerification}>
-                  {purchaseConnection.state === 'expired'
-                    ? purchasesActionPending === 'start' ? 'Sending…' : 'Reconnect purchases'
-                    : purchasesActionPending === 'start' ? 'Sending…' : 'Connect purchases'}
-                </button>
-              {/if}
-            </div>
-          </section>
-
-          {#if updateMarketplacePlugins.length}
-            <section class="marketplace-list">
-              {#each updateMarketplacePlugins as plugin}
-                <article class="panel marketplace-card">
-                  <div class="marketplace-copy">
-                    <div class="marketplace-heading">
-                      <h4>{plugin.name}</h4>
-                    </div>
-                    <div class="marketplace-version-list">
-                      {#if installedVersionLabel(plugin)}
-                        <div class="marketplace-version-row">
-                          <span class="marketplace-version-label">Installed locally</span>
-                          <span>{installedVersionLabel(plugin)}</span>
-                        </div>
-                      {/if}
-                      {#if catalogVersionLabel(plugin)}
-                        <div class="marketplace-version-row">
-                          <span class="marketplace-version-label">Catalog version</span>
-                          <span>{catalogVersionLabel(plugin)}</span>
-                        </div>
-                      {/if}
-                    </div>
-                    <div class="marketplace-badges">
-                      {#each marketplaceBadges(plugin) as badge}
-                        <span class={`state-badge ${badge.tone}`}>{badge.label}</span>
-                      {/each}
-                    </div>
-                  </div>
-                  <div class="marketplace-actions">
-                    <button
-                      type="button"
-                      class="primary-action"
-                      disabled={pendingMarketplaceInstalls[plugin.plugin_id]}
-                      onclick={() => runMarketplaceAction(plugin)}
-                    >
-                      {pendingMarketplaceInstalls[plugin.plugin_id] ? 'Installing…' : 'Update'}
-                    </button>
-                  </div>
-                </article>
-              {/each}
-            </section>
-          {:else}
-            <div class="empty-state plugin-content">
-              <h3>No Updates</h3>
-              <p>
-                {purchaseConnection.state === 'connected'
-                  ? 'Purchased plugins are up to date.'
-                  : 'Connect purchases to check for plugin updates.'}
-              </p>
-            </div>
-          {/if}
         </div>
       {:else if selectedPlugin}
         <div class="plugin-content">
@@ -1947,179 +1429,6 @@
     padding: 0 10px;
   }
 
-  .marketplace-page,
-  .marketplace-list {
-    display: grid;
-    gap: 14px;
-  }
-
-  .purchase-panel {
-    display: grid;
-    gap: 16px;
-  }
-
-  .purchase-panel.compact {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    padding-top: 14px;
-    padding-bottom: 14px;
-  }
-
-  .purchase-copy {
-    display: grid;
-    gap: 6px;
-  }
-
-  .purchase-email-display {
-    color: var(--text);
-    font-size: 18px;
-    font-weight: 620;
-    line-height: 1.2;
-  }
-
-  .purchase-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 14px;
-    color: var(--muted);
-    font-size: 12px;
-  }
-
-  .purchase-trust {
-    margin: 0;
-    color: var(--muted);
-    font-size: 12px;
-  }
-
-  .purchase-email-field {
-    display: grid;
-    gap: 6px;
-    min-width: min(100%, 360px);
-  }
-
-  .purchase-email-field span {
-    font-size: 12px;
-    color: var(--muted);
-  }
-
-  .purchase-email-field input {
-    width: 100%;
-    height: 44px;
-    padding: 0 14px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--panel);
-    color: var(--text);
-  }
-
-  .purchase-actions,
-  .marketplace-actions {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  .purchase-actions {
-    justify-content: flex-start;
-  }
-
-  .purchase-submit {
-    width: min(100%, 360px);
-  }
-
-  .marketplace-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
-    gap: 14px 18px;
-    padding: 16px 18px;
-  }
-
-  .marketplace-copy {
-    display: grid;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .marketplace-heading {
-    display: block;
-  }
-
-  .marketplace-heading h4 {
-    margin: 0;
-  }
-
-  .marketplace-version-list {
-    display: grid;
-    gap: 4px;
-  }
-
-  .marketplace-version-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: baseline;
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  .marketplace-version-label {
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .marketplace-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .state-badge {
-    display: inline-flex;
-    align-items: center;
-    min-height: 24px;
-    padding: 0 10px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-  }
-
-  .state-badge.owned {
-    border: 1px solid var(--border);
-    background: var(--selection);
-    color: var(--muted);
-  }
-
-  .state-badge.installed {
-    border: 1px solid var(--border);
-    background: var(--accent-wash);
-    color: var(--accent-strong);
-  }
-
-  .state-badge.update {
-    border: 1px solid var(--warn-border);
-    background: var(--warn-bg);
-    color: var(--warn-text);
-  }
-
-  .state-badge.development {
-    border: 1px solid var(--border);
-    background: var(--selection);
-    color: var(--muted);
-  }
-
-  .state-badge.neutral {
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--muted);
-  }
-
   .sidebar h2 {
     color: var(--text);
     font-size: 18px;
@@ -2296,7 +1605,6 @@
   .linkish,
   .secondary,
   .primary-action,
-  .tertiary,
   .confirm-actions button {
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -2346,19 +1654,6 @@
     border-color: var(--danger);
     background: var(--danger);
     color: var(--on-accent);
-  }
-
-  .tertiary {
-    border-color: transparent;
-    color: var(--muted);
-    background: transparent;
-  }
-
-  .tertiary:hover,
-  .tertiary:focus-visible {
-    border-color: var(--border);
-    background: var(--surface);
-    outline: none;
   }
 
   .plugin-versions,
@@ -2638,47 +1933,6 @@
 
   .empty-state {
     justify-items: start;
-  }
-
-  .empty-illustration {
-    display: grid;
-    place-items: center;
-    width: 56px;
-    height: 56px;
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    background: var(--surface);
-  }
-
-  .empty-glyph {
-    color: var(--accent-strong);
-    font-size: 26px;
-    line-height: 1;
-  }
-
-  .empty-steps {
-    display: grid;
-    gap: 6px;
-    margin: 0;
-    padding-left: 18px;
-    color: var(--muted);
-  }
-
-  .empty-cta {
-    min-width: 220px;
-  }
-
-  @media (max-width: 900px) {
-    .purchase-panel.compact,
-    .marketplace-card {
-      grid-template-columns: 1fr;
-    }
-
-    .purchase-submit,
-    .purchase-email-field,
-    .empty-cta {
-      width: 100%;
-    }
   }
 
   .issue-category-actions button {

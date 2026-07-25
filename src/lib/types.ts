@@ -226,29 +226,6 @@ export type PluginValidationError = {
   message: string;
 };
 
-export type PurchaseConnectionState = 'not_connected' | 'pending' | 'connected' | 'expired';
-
-export type PurchaseConnectionSummary = {
-  state: PurchaseConnectionState;
-  email: string | null;
-  pending_email: string | null;
-  pending_expires_at: string | null;
-  last_synced_at: string | null;
-  has_cached_entitlements: boolean;
-  status_message: string | null;
-  storage_warning: string | null;
-};
-
-export type MarketplacePluginSummary = {
-  plugin_id: string;
-  name: string;
-  owned: boolean;
-  latest_version: string | null;
-  download_url: string | null;
-  buy_url: string | null;
-  homepage_url: string | null;
-};
-
 export type PluginIssueCount = {
   plugin_id: string;
   status: string;
@@ -278,8 +255,6 @@ export type PluginIndexSummary = {
   plugin_summaries: PluginHealthSummary[];
   auto_ignored_issue_types: PluginIssuePreference[];
   plugin_validation_errors: PluginValidationError[];
-  purchase_connection: PurchaseConnectionSummary;
-  marketplace_plugins: MarketplacePluginSummary[];
 };
 
 export type InstallPluginResult = {
