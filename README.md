@@ -6,7 +6,7 @@ No index. No daemon. No stale results.
 Searchmonkey III is a modern desktop search tool that searches what is actually on disk — right now.
 It does not maintain a background index, and it does not return outdated results.
 
-The Searchmonkey III project is available at https://searchmonkey.dev.
+This is a fork of [Searchmonkey III](https://github.com/cottrela/searchmonkey-III), maintained at https://github.com/sphynx79/searchmonkey-III.
 
 ---
 
@@ -119,7 +119,6 @@ src-tauri/      Rust (Tauri) backend
 * improved search performance and filtering
 * richer match context and navigation
 * plugin system for file enrichment
-* optional account-backed features (sync, etc.)
 
 ---
 
@@ -129,7 +128,7 @@ Licensed under the MIT License — see [LICENSE](./LICENSE)
 
 ---
 
-## 👤 Author
+## 👤 Credits
 
-Searchmonkey is developed by Axonara Ltd
-https://axonara.co.uk
+Original Searchmonkey III by [cottrela](https://github.com/cottrela/searchmonkey-III).
+This fork is maintained by [sphynx79](https://github.com/sphynx79).
