@@ -32,7 +32,6 @@ use tauri_plugin_opener::OpenerExt;
 const UI_RESULT_LIMIT: usize = 100_000;
 const PREVIEW_MAX_SCAN_LINES: u64 = 250_000;
 const DIRECTORY_SUGGESTION_LIMIT: usize = 500;
-const IMPROVE_MENU_ID: &str = "improve-searchmonkey";
 const ABOUT_SEARCHMONKEY_MENU_ID: &str = "about-searchmonkey-iii";
 const REGEX_CHEAT_SHEET_MENU_ID: &str = "regex-cheat-sheet";
 const RELEASE_NOTES_MENU_ID: &str = "release-notes";
@@ -1076,8 +1075,6 @@ pub fn run() {
                 .text(RELEASE_NOTES_MENU_ID, "Release Notes")
                 .text(WEBSITE_MENU_ID, "Searchmonkey Website")
                 .text(REPORT_ISSUE_MENU_ID, "Report an Issue")
-                .separator()
-                .text(IMPROVE_MENU_ID, "Improve Searchmonkey")
                 .build()?;
             let edit_menu = SubmenuBuilder::new(app, "Edit")
                 .undo()
@@ -1115,10 +1112,6 @@ pub fn run() {
                 .build()
         })
         .on_menu_event(|app, event| {
-            if event.id() == IMPROVE_MENU_ID {
-                let _ = app.emit("open-improve-searchmonkey", ());
-            }
-
             if event.id() == ABOUT_SEARCHMONKEY_MENU_ID {
                 let _ = app.emit("open-about-searchmonkey", ());
             }

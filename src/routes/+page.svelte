@@ -13,7 +13,6 @@
   import ScopePanel from '$lib/components/ScopePanel.svelte';
   import SearchBar from '$lib/components/SearchBar.svelte';
   import StatusBar from '$lib/components/StatusBar.svelte';
-  import TelemetryConsentDialog from '$lib/components/TelemetryConsentDialog.svelte';
   import {
     cancelSearch as cancelSearchCommand,
     disconnectPurchaseConnection,
@@ -49,7 +48,6 @@
   } from '$lib/search';
   import { normalizeExcludePatterns, normalizeIncludePatterns } from '$lib/patterns';
   import { filename, normalizeGlobPattern, parentPath } from '$lib/paths';
-  import { loadTelemetryState, syncTelemetryConsent, type TelemetryState } from '$lib/telemetry';
   import { getAvailableUpdate, type AvailableUpdate } from '$lib/update-check';
   import { defaultSearchOptions } from '$lib/types';
   import type {
@@ -86,7 +84,6 @@
   let hasSearched = $state(false);
   let activeSearchId = $state<number | null>(null);
   let searchUnlisteners: Array<() => void> = [];
-  let improveMenuEventUnlisten: (() => void) | null = null;
   let aboutMenuEventUnlisten: (() => void) | null = null;
   let regexCheatSheetMenuEventUnlisten: (() => void) | null = null;
   let releaseNotesMenuEventUnlisten: (() => void) | null = null;
@@ -118,9 +115,6 @@
   let defaultHomePath = '';
   let aboutDialogOpen = $state(false);
   let regexCheatSheetOpen = $state(false);
-  let telemetryState = $state<TelemetryState | null>(null);
-  let telemetryDialogOpen = $state(false);
-  let telemetryFirstRun = $state(false);
   let availableUpdate = $state<AvailableUpdate | null>(null);
   let compactView = $state<'results' | 'preview'>('results');
   let layoutMode = $state<'focus' | 'split' | 'full'>('split');
@@ -494,11 +488,6 @@
     recentSearches = loadCriteria(RECENT_SEARCHES_KEY);
     savedSearches = loadCriteria(SAVED_SEARCHES_KEY);
     void checkForAvailableUpdate();
-    void listen('open-improve-searchmonkey', () => {
-      openTelemetryPreferences();
-    }).then((unlisten) => {
-      improveMenuEventUnlisten = unlisten;
-    });
     void listen('open-about-searchmonkey', () => {
       aboutDialogOpen = true;
     }).then((unlisten) => {
@@ -567,20 +556,6 @@
     }).then((unlisten) => {
       appAuthUpdatedEventUnlisten = unlisten;
     });
-    telemetryState = loadTelemetryState();
-    if (!telemetryState.prompted || !telemetryState.consent) {
-      telemetryFirstRun = true;
-      telemetryDialogOpen = true;
-    } else {
-      void syncTelemetryConsent(telemetryState).then((nextState) => {
-        telemetryState = nextState;
-        if (hasPendingTelemetrySync(nextState)) {
-          telemetryFirstRun = false;
-          telemetryDialogOpen = true;
-        }
-      });
-    }
-
     homeDir()
       .then((home) => {
         defaultHomePath = home;
@@ -605,8 +580,6 @@
       clearPurchasePollTimer();
       clearElapsedTimer();
       clearResultFlushTimer();
-      improveMenuEventUnlisten?.();
-      improveMenuEventUnlisten = null;
       aboutMenuEventUnlisten?.();
       aboutMenuEventUnlisten = null;
       regexCheatSheetMenuEventUnlisten?.();
@@ -1230,32 +1203,12 @@
     localStorage.setItem(key, JSON.stringify(criteria));
   }
 
-  function openTelemetryPreferences() {
-    telemetryFirstRun = false;
-    telemetryDialogOpen = true;
-  }
-
-  function closeTelemetryPreferences() {
-    if (telemetryFirstRun) return;
-    telemetryDialogOpen = false;
-  }
-
   function closeAboutDialog() {
     aboutDialogOpen = false;
   }
 
   function closeRegexCheatSheet() {
     regexCheatSheetOpen = false;
-  }
-
-  function handleTelemetrySaved(nextState: TelemetryState) {
-    telemetryState = nextState;
-    telemetryFirstRun = false;
-    telemetryDialogOpen = false;
-  }
-
-  function hasPendingTelemetrySync(state: TelemetryState) {
-    return Boolean(state.consent && state.lastSubmittedConsent !== state.consent);
   }
 
   function sameStringArray(a: string[], b: string[]) {
@@ -2192,15 +2145,6 @@
         </form>
       </div>
     </div>
-  {/if}
-
-  {#if telemetryDialogOpen && telemetryState}
-    <TelemetryConsentDialog
-      firstRun={telemetryFirstRun}
-      telemetry={telemetryState}
-      onClose={closeTelemetryPreferences}
-      onSaved={handleTelemetrySaved}
-    />
   {/if}
 
   {#if aboutDialogOpen}
