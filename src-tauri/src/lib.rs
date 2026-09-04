@@ -102,13 +102,14 @@ async fn read_file_preview(
     path: String,
     start_line: u64,
     end_line: u64,
+    encoding: String,
 ) -> Result<FilePreview, String> {
     if start_line == 0 || end_line == 0 || start_line > end_line {
         return Err("Preview line range is invalid.".to_string());
     }
 
     tauri::async_runtime::spawn_blocking(move || {
-        read_file_preview_range(path, start_line, end_line)
+        read_file_preview_range(path, start_line, end_line, encoding)
     })
     .await
     .map_err(|err| err.to_string())?
@@ -118,6 +119,7 @@ fn read_file_preview_range(
     path: String,
     start_line: u64,
     end_line: u64,
+    encoding: String,
 ) -> Result<FilePreview, String> {
     let file = std::fs::File::open(&path).map_err(|err| err.to_string())?;
     let mut reader = BufReader::new(file);
@@ -157,7 +159,7 @@ fn read_file_preview_range(
         }
 
         let trimmed = trim_line_ending(&buffer);
-        let text = String::from_utf8_lossy(trimmed).to_string();
+        let text = decode_preview_line(trimmed, &encoding, preview_meta.is_some());
 
         lines.push(FilePreviewLine {
             number,
@@ -182,6 +184,15 @@ fn read_file_preview_range(
     })
 }
 
+fn decode_preview_line(bytes: &[u8], encoding: &str, is_plugin_preview: bool) -> String {
+    if encoding == "windows-1250" && !is_plugin_preview {
+        let (text, _, _) = encoding_rs::WINDOWS_1250.decode(bytes);
+        text.into_owned()
+    } else {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
 fn trim_line_ending(bytes: &[u8]) -> &[u8] {
     if bytes.ends_with(b"\r\n") {
         &bytes[..bytes.len() - 2]
@@ -189,6 +200,78 @@ fn trim_line_ending(bytes: &[u8]) -> &[u8] {
         &bytes[..bytes.len() - 1]
     } else {
         bytes
+    }
+}
+
+#[cfg(test)]
+mod preview_encoding_tests {
+    use super::{decode_preview_line, read_file_preview_range};
+    use std::path::Path;
+
+    fn fixture_path() -> String {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/windows-1250.txt")
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    fn reads_windows_1250_preview_fixture() {
+        let preview =
+            read_file_preview_range(fixture_path(), 1, 2, "windows-1250".to_string()).unwrap();
+
+        assert_eq!(
+            preview
+                .lines
+                .iter()
+                .map(|line| line.text.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Central European fixture",
+                "Příliš žluťoučký kůň úpěl ďábelské ódy."
+            ]
+        );
+    }
+
+    #[test]
+    fn changing_encoding_reloads_preview_text() {
+        let windows_1250 =
+            read_file_preview_range(fixture_path(), 2, 2, "windows-1250".to_string()).unwrap();
+        let utf8 = read_file_preview_range(fixture_path(), 2, 2, "utf-8".to_string()).unwrap();
+
+        assert_eq!(
+            windows_1250.lines[0].text,
+            "Příliš žluťoučký kůň úpěl ďábelské ódy."
+        );
+        assert_ne!(windows_1250.lines[0].text, utf8.lines[0].text);
+    }
+
+    #[test]
+    fn keeps_utf8_ascii_and_auto_preview_behaviour() {
+        assert_eq!(
+            decode_preview_line("Problémy".as_bytes(), "utf-8", false),
+            "Problémy"
+        );
+        assert_eq!(
+            decode_preview_line(b"Plain ASCII", "ascii", false),
+            "Plain ASCII"
+        );
+        assert_eq!(
+            decode_preview_line("Problémy".as_bytes(), "auto", false),
+            "Problémy"
+        );
+        assert_eq!(
+            decode_preview_line(b"Invalid: \xff", "auto", false),
+            "Invalid: �"
+        );
+    }
+
+    #[test]
+    fn keeps_generated_plugin_previews_as_utf8() {
+        assert_eq!(
+            decode_preview_line("Problémy".as_bytes(), "windows-1250", true),
+            "Problémy"
+        );
     }
 }
 
