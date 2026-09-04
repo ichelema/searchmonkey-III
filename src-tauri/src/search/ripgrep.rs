@@ -165,7 +165,7 @@ impl RipgrepSidecarProvider {
             args.push("--text".to_string());
         }
 
-        if encoding == "utf-8" || encoding == "ascii" {
+        if matches!(encoding.as_str(), "utf-8" | "windows-1250" | "ascii") {
             args.push("--encoding".to_string());
             args.push(encoding);
         }
@@ -674,7 +674,9 @@ fn home_dir() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_search_path, ResultPathFilter};
+    use super::{expand_search_path, ResultPathFilter, RipgrepSidecarProvider};
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    use crate::plugins::registry::PluginRegistry;
     use crate::search::SearchRequest;
     use std::path::Path;
 
@@ -683,6 +685,65 @@ mod tests {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         assert_eq!(expand_search_path("~"), home);
         assert!(expand_search_path("~/sm-test").ends_with("/sm-test"));
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn windows_1250_request(path: &Path) -> SearchRequest {
+        SearchRequest {
+            query: "žluťoučký".to_string(),
+            path: path.to_string_lossy().into_owned(),
+            regex: false,
+            case_sensitive: false,
+            hidden: false,
+            include_patterns: vec![],
+            exclude_patterns: vec![],
+            follow_symlinks: false,
+            multiline: false,
+            context_before: 0,
+            context_after: 0,
+            min_file_size: String::new(),
+            max_file_size: String::new(),
+            modified_after: None,
+            skip_binary: false,
+            encoding: "windows-1250".to_string(),
+            max_matches: None,
+            respect_gitignore: true,
+            ignore_node_modules: false,
+            ignore_build_artifacts: false,
+        }
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    fn passes_windows_1250_encoding_to_ripgrep() {
+        let request = windows_1250_request(Path::new("/tmp"));
+        let args = RipgrepSidecarProvider::args(request, &PluginRegistry::default());
+
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--encoding", "windows-1250"]));
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    fn ripgrep_matches_windows_1250_fixture() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/windows-1250.txt");
+        let args = RipgrepSidecarProvider::args(
+            windows_1250_request(&fixture),
+            &PluginRegistry::default(),
+        );
+        let output = std::process::Command::new(super::extracted_embedded_rg().unwrap())
+            .args(args)
+            .output()
+            .unwrap();
+
+        assert!(output.status.success());
+        let result = output
+            .stdout
+            .split(|byte| *byte == b'\n')
+            .find_map(RipgrepSidecarProvider::parse_match)
+            .unwrap();
+        assert_eq!(result.line_text, "Příliš žluťoučký kůň úpěl ďábelské ódy.");
     }
 
     #[test]
