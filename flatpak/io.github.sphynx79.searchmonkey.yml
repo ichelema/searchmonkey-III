@@ -1,0 +1,29 @@
+app-id: io.github.sphynx79.searchmonkey
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+
+command: searchmonkey
+
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=x11
+  - --device=dri
+  - --filesystem=home
+
+modules:
+  - name: searchmonkey
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 searchmonkey /app/bin/searchmonkey
+      - install -Dm755 rg /app/bin/rg
+      - install -Dm644 io.github.sphynx79.searchmonkey.desktop /app/share/applications/io.github.sphynx79.searchmonkey.desktop
+      - install -Dm644 io.github.sphynx79.searchmonkey.metainfo.xml /app/share/metainfo/io.github.sphynx79.searchmonkey.metainfo.xml
+      - install -Dm644 icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.sphynx79.searchmonkey.png
+
+    sources:
+      - type: archive
+        url: https://github.com/sphynx79/searchmonkey-III/releases/download/v0.4.0/Searchmonkey_linux_x86_64.tar.gz
+        sha256: bb762c9d4ea7cd4b6417ca7b7f9f6e3f394151894089847d47ddd5b17e0cad67
