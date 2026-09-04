@@ -29,6 +29,8 @@ pub struct RipgrepSidecarProvider {
 #[derive(Clone, Default)]
 pub struct ResultPathFilter {
     search_root: PathBuf,
+    path_query: String,
+    case_sensitive: bool,
     include_patterns: Vec<CompiledGlobPattern>,
     exclude_patterns: Vec<CompiledGlobPattern>,
 }
@@ -570,12 +572,30 @@ impl ResultPathFilter {
 
         Self {
             search_root,
+            path_query: if request.case_sensitive {
+                request.path_query.trim().to_string()
+            } else {
+                request.path_query.trim().to_lowercase()
+            },
+            case_sensitive: request.case_sensitive,
             include_patterns: compile_glob_patterns(&request.include_patterns),
             exclude_patterns: compile_glob_patterns(&request.exclude_patterns),
         }
     }
 
     pub fn matches_path(&self, path: &Path) -> bool {
+        if !self.path_query.is_empty() {
+            let normalized_path = normalize_path_for_matching(path);
+            let candidate = if self.case_sensitive {
+                normalized_path
+            } else {
+                normalized_path.to_lowercase()
+            };
+            if !candidate.contains(&self.path_query) {
+                return false;
+            }
+        }
+
         let include_matches = self.include_patterns.is_empty()
             || self
                 .include_patterns
@@ -593,8 +613,9 @@ impl ResultPathFilter {
 
     pub fn debug_summary(&self) -> String {
         format!(
-            "search_root={} include_count={} exclude_count={}",
+            "search_root={} path_query_len={} include_count={} exclude_count={}",
             self.search_root.display(),
+            self.path_query.len(),
             self.include_patterns.len(),
             self.exclude_patterns.len()
         )
@@ -691,6 +712,7 @@ mod tests {
     fn windows_1250_request(path: &Path) -> SearchRequest {
         SearchRequest {
             query: "žluťoučký".to_string(),
+            path_query: String::new(),
             path: path.to_string_lossy().into_owned(),
             regex: false,
             case_sensitive: false,
@@ -779,6 +801,7 @@ mod tests {
     fn includes_match_source_extension_after_remap() {
         let filter = ResultPathFilter::from_request(&SearchRequest {
             query: "needle".to_string(),
+            path_query: String::new(),
             path: "/Users/acottrell/ocr-test".to_string(),
             regex: false,
             case_sensitive: false,
@@ -808,6 +831,7 @@ mod tests {
     fn excludes_are_applied_to_source_paths() {
         let filter = ResultPathFilter::from_request(&SearchRequest {
             query: "needle".to_string(),
+            path_query: String::new(),
             path: "/Users/acottrell/ocr-test".to_string(),
             regex: false,
             case_sensitive: false,
@@ -831,5 +855,150 @@ mod tests {
 
         assert!(!filter.matches_path(Path::new("/Users/acottrell/ocr-test/invoices/page-1.jpg")));
         assert!(filter.matches_path(Path::new("/Users/acottrell/ocr-test/invoices/page-1.png")));
+    }
+
+    #[test]
+    fn path_query_matches_normalized_paths_with_case_control() {
+        let request = SearchRequest {
+            query: "needle".to_string(),
+            path_query: " REPORTS ".to_string(),
+            path: "/workspace".to_string(),
+            regex: false,
+            case_sensitive: false,
+            hidden: false,
+            include_patterns: vec!["*.txt".to_string()],
+            exclude_patterns: vec!["secret*".to_string()],
+            follow_symlinks: false,
+            multiline: false,
+            context_before: 0,
+            context_after: 0,
+            min_file_size: String::new(),
+            max_file_size: String::new(),
+            modified_after: None,
+            skip_binary: false,
+            encoding: "auto".to_string(),
+            max_matches: None,
+            respect_gitignore: true,
+            ignore_node_modules: false,
+            ignore_build_artifacts: false,
+        };
+        let filter = ResultPathFilter::from_request(&request);
+
+        assert!(filter.matches_path(Path::new("/workspace/Reports/invoice.txt")));
+        assert!(filter.matches_path(Path::new("/workspace/reports-2026/readme.txt")));
+        assert!(filter.matches_path(Path::new(r"C:\workspace\REPORTS\invoice.txt")));
+        assert!(!filter.matches_path(Path::new("/workspace/docs/report.txt")));
+        assert!(!filter.matches_path(Path::new("/workspace/reports/invoice.md")));
+        assert!(!filter.matches_path(Path::new("/workspace/reports/secret-notes.txt")));
+
+        let root_filter = ResultPathFilter::from_request(&SearchRequest {
+            path_query: "workspace".to_string(),
+            include_patterns: vec![],
+            exclude_patterns: vec![],
+            ..request.clone()
+        });
+        assert!(root_filter.matches_path(Path::new("/workspace/docs/readme.md")));
+
+        let case_sensitive_filter = ResultPathFilter::from_request(&SearchRequest {
+            case_sensitive: true,
+            include_patterns: vec![],
+            exclude_patterns: vec![],
+            ..request
+        });
+        assert!(!case_sensitive_filter.matches_path(Path::new("/workspace/reports/readme.txt")));
+        assert!(case_sensitive_filter.matches_path(Path::new("/workspace/REPORTS/readme.txt")));
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    fn ripgrep_results_respect_path_query_and_search_options() {
+        let directory = tempfile::Builder::new()
+            .prefix("ich-127-")
+            .tempdir()
+            .unwrap();
+        let root = directory.path().join("workspace");
+        let reports = root.join("Reports");
+        let docs = root.join("docs");
+        std::fs::create_dir_all(&reports).unwrap();
+        std::fs::create_dir_all(&docs).unwrap();
+        std::fs::write(reports.join("invoice.txt"), "needle\n").unwrap();
+        std::fs::write(reports.join("secret-notes.txt"), "needle\n").unwrap();
+        std::fs::write(reports.join("invoice.md"), "needle\n").unwrap();
+        std::fs::write(docs.join("report.txt"), "needle\n").unwrap();
+
+        let request = SearchRequest {
+            query: "needle".to_string(),
+            path_query: "reports".to_string(),
+            path: root.to_string_lossy().into_owned(),
+            regex: false,
+            case_sensitive: false,
+            hidden: false,
+            include_patterns: vec!["*.txt".to_string()],
+            exclude_patterns: vec!["secret*".to_string()],
+            follow_symlinks: false,
+            multiline: false,
+            context_before: 0,
+            context_after: 0,
+            min_file_size: String::new(),
+            max_file_size: String::new(),
+            modified_after: None,
+            skip_binary: true,
+            encoding: "auto".to_string(),
+            max_matches: None,
+            respect_gitignore: true,
+            ignore_node_modules: false,
+            ignore_build_artifacts: false,
+        };
+
+        assert_eq!(
+            run_filtered_ripgrep(request.clone()),
+            vec![reports.join("invoice.txt")]
+        );
+        assert!(run_filtered_ripgrep(SearchRequest {
+            query: "nee[a-z]le".to_string(),
+            regex: false,
+            ..request.clone()
+        })
+        .is_empty());
+        assert_eq!(
+            run_filtered_ripgrep(SearchRequest {
+                query: "nee[a-z]le".to_string(),
+                regex: true,
+                ..request.clone()
+            }),
+            vec![reports.join("invoice.txt")]
+        );
+        assert!(
+            !RipgrepSidecarProvider::args(request.clone(), &PluginRegistry::default())
+                .contains(&"--hidden".to_string())
+        );
+        assert!(RipgrepSidecarProvider::args(
+            SearchRequest {
+                hidden: true,
+                ..request
+            },
+            &PluginRegistry::default()
+        )
+        .contains(&"--hidden".to_string()));
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn run_filtered_ripgrep(request: SearchRequest) -> Vec<std::path::PathBuf> {
+        let filter = ResultPathFilter::from_request(&request);
+        let output = std::process::Command::new(super::extracted_embedded_rg().unwrap())
+            .args(RipgrepSidecarProvider::args(
+                request,
+                &PluginRegistry::default(),
+            ))
+            .output()
+            .unwrap();
+
+        output
+            .stdout
+            .split(|byte| *byte == b'\n')
+            .filter_map(RipgrepSidecarProvider::parse_match)
+            .filter(|result| filter.matches_path(Path::new(&result.path)))
+            .map(|result| Path::new(&result.path).to_path_buf())
+            .collect()
     }
 }
