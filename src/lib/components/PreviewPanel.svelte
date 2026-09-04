@@ -68,7 +68,7 @@
     onPreviousFile: () => void;
     onNextFile: () => void;
     onSelect: (match: PreviewState['matches'][number]) => void;
-    onOpen: (path: string) => void;
+    onOpen: (path: string, line?: number, column?: number) => void;
     onReveal: (path: string) => void;
     onReindex: (match: PreviewState['matches'][number]) => void;
     onClose: () => void;
@@ -322,6 +322,11 @@
     void action();
   }
 
+  function openActiveFile() {
+    const match = preview.activeMatch;
+    onOpen(preview.filePath, match?.line_number, (match?.submatches[0]?.start ?? 0) + 1);
+  }
+
   function handleCopy(event: MouseEvent, text: string) {
     handleAction(event, async () => {
       await copyText(text);
@@ -393,7 +398,7 @@
       <button type="button" onclick={onClose} title="Back to results">← Results</button>
       <span></span>
       <div class="drilldown-actions">
-        <button type="button" onclick={(event) => handleAction(event, () => onOpen(preview.filePath))} title="Open file">Open</button>
+        <button type="button" onclick={(event) => handleAction(event, openActiveFile)} title="Open file">Open</button>
         <button type="button" onclick={(event) => handleAction(event, () => onReveal(preview.filePath))}>Reveal</button>
         <button type="button" onclick={(event) => handleCopy(event, activeMatchOnly)} disabled={!activeMatchOnly}>
           Copy match
@@ -409,7 +414,7 @@
       <details class="compact-actions more-actions" ontoggle={handleMoreActionsToggle} onfocusout={handleMoreActionsFocusOut}>
         <summary title="More actions" aria-label="More actions">...</summary>
         <div class="menu">
-          <button type="button" onclick={(event) => handleAction(event, () => onOpen(preview.filePath))} title="Open file">Open</button>
+          <button type="button" onclick={(event) => handleAction(event, openActiveFile)} title="Open file">Open</button>
           <button type="button" onclick={(event) => handleAction(event, () => onReveal(preview.filePath))}>Reveal</button>
           <button class="file-menu-action" type="button" onclick={onPreviousFile} disabled={!canNavigateFiles}>Previous file</button>
           <button class="file-menu-action" type="button" onclick={onNextFile} disabled={!canNavigateFiles}>Next file</button>
@@ -428,7 +433,7 @@
       <details class="mobile-actions more-actions" ontoggle={handleMoreActionsToggle} onfocusout={handleMoreActionsFocusOut}>
         <summary title="More actions" aria-label="More actions">...</summary>
         <div class="menu">
-          <button type="button" onclick={(event) => handleAction(event, () => onOpen(preview.filePath))} title="Open file">Open</button>
+          <button type="button" onclick={(event) => handleAction(event, openActiveFile)} title="Open file">Open</button>
           <button type="button" onclick={(event) => handleAction(event, () => onReveal(preview.filePath))}>Reveal</button>
           <button class="file-menu-action" type="button" onclick={onPreviousFile} disabled={!canNavigateFiles}>Previous file</button>
           <button class="file-menu-action" type="button" onclick={onNextFile} disabled={!canNavigateFiles}>Next file</button>
@@ -482,7 +487,7 @@
         </div>
       </div>
       <div class="desktop-preview-actions">
-        <button type="button" onclick={(event) => handleAction(event, () => onOpen(preview.filePath))} title="Open file">Open</button>
+        <button type="button" onclick={(event) => handleAction(event, openActiveFile)} title="Open file">Open</button>
         <button class="reveal-action" type="button" onclick={(event) => handleAction(event, () => onReveal(preview.filePath))} title="Reveal file">Reveal</button>
         <details class="more-actions" ontoggle={handleMoreActionsToggle} onfocusout={handleMoreActionsFocusOut}>
           <summary title="More actions" aria-label="More actions">...</summary>

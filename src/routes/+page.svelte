@@ -6,6 +6,7 @@
   import PathInput from '$lib/components/PathInput.svelte';
   import PluginsDialog from '$lib/components/PluginsDialog.svelte';
   import AboutDialog from '$lib/components/AboutDialog.svelte';
+  import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import PreviewPanel from '$lib/components/PreviewPanel.svelte';
   import RegexCheatSheetDialog from '$lib/components/RegexCheatSheetDialog.svelte';
   import RegexTester from '$lib/components/RegexTester.svelte';
@@ -41,6 +42,14 @@
     uninstallPluginVersion,
     unignorePluginIssue
   } from '$lib/search';
+  import {
+    defaultFileOpenersConfig,
+    loadFileOpenersConfig,
+    openerForPath,
+    parseCommandTemplate,
+    saveFileOpenersConfig,
+    type FileOpenersConfig
+  } from '$lib/file-openers';
   import { normalizeExcludePatterns, normalizeIncludePatterns } from '$lib/patterns';
   import { filename, normalizeGlobPattern, parentPath } from '$lib/paths';
   import { shouldAllowNativeContextMenu } from '$lib/ui-policy';
@@ -81,6 +90,7 @@
   let hasSearched = $state(false);
   let activeSearchId = $state<number | null>(null);
   let searchUnlisteners: Array<() => void> = [];
+  let fileOpenersMenuEventUnlisten: (() => void) | null = null;
   let aboutMenuEventUnlisten: (() => void) | null = null;
   let regexCheatSheetMenuEventUnlisten: (() => void) | null = null;
   let releaseNotesMenuEventUnlisten: (() => void) | null = null;
@@ -108,6 +118,8 @@
   let saveIncludePath = $state(true);
   let saveIncludeOptions = $state(true);
   let defaultHomePath = '';
+  let fileOpenersDialogOpen = $state(false);
+  let fileOpenersConfig = $state<FileOpenersConfig>(defaultFileOpenersConfig());
   let aboutDialogOpen = $state(false);
   let regexCheatSheetOpen = $state(false);
   let availableUpdate = $state<AvailableUpdate | null>(null);
@@ -478,7 +490,13 @@
 
     recentSearches = loadCriteria(RECENT_SEARCHES_KEY);
     savedSearches = loadCriteria(SAVED_SEARCHES_KEY);
+    fileOpenersConfig = loadFileOpenersConfig();
     void checkForAvailableUpdate();
+    void listen('open-file-opening-settings', () => {
+      fileOpenersDialogOpen = true;
+    }).then((unlisten) => {
+      fileOpenersMenuEventUnlisten = unlisten;
+    });
     void listen('open-about-searchmonkey', () => {
       aboutDialogOpen = true;
     }).then((unlisten) => {
@@ -558,6 +576,8 @@
       clearPluginStatusPollTimer();
       clearElapsedTimer();
       clearResultFlushTimer();
+      fileOpenersMenuEventUnlisten?.();
+      fileOpenersMenuEventUnlisten = null;
       aboutMenuEventUnlisten?.();
       aboutMenuEventUnlisten = null;
       regexCheatSheetMenuEventUnlisten?.();
@@ -666,7 +686,7 @@
 
   async function handleOpenPluginFolder() {
     try {
-      await openFilePath(await pluginFolderPath());
+      await openFilePath({ path: await pluginFolderPath() });
       pluginStatusError = '';
     } catch (error) {
       pluginStatusError = normalizeError(error);
@@ -675,7 +695,7 @@
 
   async function openSpecificPluginFolder(targetPath: string) {
     try {
-      await openFilePath(targetPath);
+      await openFilePath({ path: targetPath });
       pluginStatusError = '';
     } catch (error) {
       pluginStatusError = normalizeError(error);
@@ -736,7 +756,7 @@
 
   async function openPluginFailure(sourcePath: string) {
     try {
-      await openFilePath(sourcePath);
+      await openFilePath({ path: sourcePath });
       pluginStatusError = '';
     } catch (error) {
       pluginStatusError = normalizeError(error);
@@ -1483,12 +1503,24 @@
     return `${path.replace(/[\\/]+$/, '')}/${normalizedPath.replace(/^[\\/]+/, '')}`;
   }
 
-  async function openFile(filePath: string) {
+  async function openFile(filePath: string, line?: number, column?: number) {
     const targetPath = openerPath(filePath);
     if (!targetPath) return;
 
+    const contextualMatch = line ? null : selected?.path === filePath ? selected : null;
+    const targetLine = line ?? contextualMatch?.line_number;
+    const targetColumn = column ?? (contextualMatch?.submatches[0]?.start ?? 0) + 1;
+    const opener = openerForPath(targetPath, fileOpenersConfig);
+    const parsedOpener = opener ? parseCommandTemplate(opener.template) : null;
+
     try {
-      await openFilePath(targetPath);
+      await openFilePath({
+        path: targetPath,
+        line: targetLine,
+        column: targetColumn,
+        command: parsedOpener?.command,
+        arguments: parsedOpener?.arguments
+      });
     } catch (error) {
       errorMessage = normalizeError(error);
     }
@@ -2039,6 +2071,17 @@
         </form>
       </div>
     </div>
+  {/if}
+
+  {#if fileOpenersDialogOpen}
+    <SettingsDialog
+      config={fileOpenersConfig}
+      onClose={() => (fileOpenersDialogOpen = false)}
+      onChanged={(config) => {
+        fileOpenersConfig = config;
+        saveFileOpenersConfig(config);
+      }}
+    />
   {/if}
 
   {#if aboutDialogOpen}

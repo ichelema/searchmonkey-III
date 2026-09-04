@@ -26,8 +26,20 @@ export async function readFilePreview(
   return invoke<FilePreview>('read_file_preview', { path, startLine, endLine, encoding });
 }
 
-export async function openFilePath(path: string): Promise<void> {
-  return invoke<void>('open_file_path', { path });
+export type OpenFileRequest = {
+  path: string;
+  line?: number;
+  column?: number;
+  command?: string;
+  arguments?: string[];
+};
+
+export async function openFilePath(request: OpenFileRequest): Promise<void> {
+  return invoke<void>('open_file_path', { request });
+}
+
+export async function validateFileOpenerCommand(command: string): Promise<void> {
+  return invoke<void>('validate_file_opener_command', { command });
 }
 
 export async function revealFilePath(path: string): Promise<void> {
@@ -154,4 +166,3 @@ export async function setPluginEnabled(pluginId: string, enabled: boolean): Prom
 export async function uninstallPluginVersion(pluginId: string, version: string): Promise<PluginIndexSummary> {
   return invoke<PluginIndexSummary>('uninstall_plugin_version', { pluginId, version });
 }
-
