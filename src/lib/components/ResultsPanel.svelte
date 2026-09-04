@@ -1126,6 +1126,10 @@
     font-weight: 800;
   }
 
+  .file-actions button:not(:disabled) {
+    cursor: pointer;
+  }
+
   .file-actions details {
     position: relative;
     z-index: 2;
