@@ -5,6 +5,7 @@
 
   let {
     query = $bindable(''),
+    pathQuery = $bindable(''),
     options = $bindable<SearchOptions>(defaultSearchOptions()),
     searching = false,
     savedSearches = [],
@@ -21,6 +22,7 @@
     onCancel
   }: {
     query: string;
+    pathQuery: string;
     options: SearchOptions;
     searching?: boolean;
     savedSearches?: SearchCriteria[];
@@ -39,6 +41,8 @@
 
   let savedMenuElement = $state<HTMLDetailsElement>();
   let savedPopoverStyle = $state('');
+  let pathQueryVisible = $state(false);
+  const showPathQuery = $derived(pathQueryVisible || pathQuery.length > 0);
   const visibleLayoutModes = $derived(availableLayoutModes);
 
   function submit(event: SubmitEvent) {
@@ -146,14 +150,46 @@
       <label for="search-query">Search text</label>
       <span>Enter Search</span>
     </div>
-    <input
-      id="search-query"
-      class="query-input"
-      bind:value={query}
-      placeholder="Search files (use Regex for patterns)..."
-      autocomplete="off"
-      spellcheck="false"
-    />
+    <div class="query-fields" class:with-name={showPathQuery}>
+      <input
+        id="search-query"
+        class="query-input"
+        bind:value={query}
+        placeholder="Search files (use Regex for patterns)..."
+        autocomplete="off"
+        spellcheck="false"
+      />
+      {#if showPathQuery}
+        <div class="name-query-wrap">
+          <input
+            id="path-query"
+            class="query-input name-query"
+            bind:value={pathQuery}
+            aria-label="File or folder name"
+            placeholder="File or folder name"
+            title="Only search files whose name or parent folder contains this text"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button
+            class="clear-name"
+            type="button"
+            aria-label="Remove file or folder name filter"
+            title="Remove name filter"
+            onclick={() => {
+              pathQuery = '';
+              pathQueryVisible = false;
+            }}>×</button>
+        </div>
+      {:else}
+        <button
+          class="add-name"
+          type="button"
+          title="Limit the search to a file or folder name"
+          onclick={() => (pathQueryVisible = true)}
+          >+ Name</button>
+      {/if}
+    </div>
   </div>
 
   <div class="actions">
@@ -315,6 +351,53 @@
     color: var(--muted);
     font-size: 12px;
     font-weight: 600;
+  }
+
+  .query-fields {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .query-fields > .query-input {
+    min-width: 180px;
+    flex: 1 1 auto;
+  }
+
+  .name-query-wrap {
+    position: relative;
+    display: flex;
+    min-width: 180px;
+    flex: 0 1 38%;
+  }
+
+  .name-query {
+    width: 100%;
+    padding-right: 32px;
+  }
+
+  .add-name,
+  .clear-name {
+    border-color: transparent;
+    color: var(--muted);
+    background: transparent;
+    white-space: nowrap;
+  }
+
+  .add-name {
+    flex: 0 0 auto;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .clear-name {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 32px;
+    padding: 0;
+    font-size: 18px;
   }
 
   .query-input {
@@ -607,6 +690,16 @@
     .query-input {
       height: 32px;
       font-size: 13px;
+    }
+
+    .query-fields.with-name {
+      flex-wrap: wrap;
+    }
+
+    .query-fields.with-name > .query-input,
+    .query-fields.with-name .name-query-wrap {
+      min-width: 100%;
+      flex-basis: 100%;
     }
 
     .brand-anchor {

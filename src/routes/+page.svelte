@@ -59,6 +59,7 @@
   } from '$lib/types';
 
   let query = $state('');
+  let pathQuery = $state('');
   let path = $state('');
   let includePatterns = $state<string[]>([]);
   let excludePatterns = $state<string[]>([]);
@@ -941,6 +942,7 @@
       id: `${Date.now()}:${Math.random().toString(16).slice(2)}`,
       name,
       query,
+      pathQuery,
       path: settings.includePath ? path : '',
       includePatterns: settings.includeFilters ? [...includePatterns] : [],
       excludePatterns: settings.includeFilters ? [...excludePatterns] : [],
@@ -982,6 +984,7 @@
     if (!criteria) return;
 
     query = criteria.query;
+    pathQuery = criteria.pathQuery ?? '';
     path = criteria.path;
     includePatterns = [...criteria.includePatterns];
     excludePatterns = [...criteria.excludePatterns];
@@ -1055,6 +1058,7 @@
       ...recentSearches.filter(
         (search) =>
           search.query !== criteria.query ||
+          search.pathQuery !== criteria.pathQuery ||
           search.path !== criteria.path ||
           !sameStringArray(search.includePatterns, criteria.includePatterns) ||
           !sameStringArray(search.excludePatterns, criteria.excludePatterns)
@@ -1069,6 +1073,7 @@
       if (!Array.isArray(parsed)) return [];
       return parsed.map((criteria) => ({
         ...criteria,
+        pathQuery: typeof criteria.pathQuery === 'string' ? criteria.pathQuery : '',
         includePatterns: Array.isArray(criteria.includePatterns) ? criteria.includePatterns : [],
         excludePatterns: Array.isArray(criteria.excludePatterns) ? criteria.excludePatterns : [],
         options: { ...defaultSearchOptions(), ...criteria.options }
@@ -1283,6 +1288,7 @@
     await cleanupSearchListeners();
 
     const cleanQuery = query.trim();
+    const cleanPathQuery = pathQuery.trim();
     const cleanPath = path.trim();
 
     if (!cleanQuery) {
@@ -1322,6 +1328,7 @@
       const searchId = await startSearchCommand(
         {
           query: cleanQuery,
+          path_query: cleanPathQuery,
           path: cleanPath,
           regex: searchModeRegex(),
           case_sensitive: options.case_sensitive,
@@ -1810,6 +1817,7 @@
 <main class="app-shell" class:full-layout={activeLayoutMode === 'full'} class:has-update={Boolean(availableUpdate)}>
   <SearchBar
     bind:query
+    bind:pathQuery
     bind:options
     searching={isSearchActive(searchState)}
     {savedSearches}
