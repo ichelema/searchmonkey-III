@@ -146,16 +146,13 @@
   </div>
 
   <div class="query-wrap">
-    <div class="query-meta">
-      <label for="search-query">Search text</label>
-      <span>Enter Search</span>
-    </div>
     <div class="query-fields" class:with-name={showPathQuery}>
       <input
         id="search-query"
         class="query-input"
         bind:value={query}
-        placeholder="Search files (use Regex for patterns)..."
+        aria-label="Search text"
+        placeholder="Search text"
         autocomplete="off"
         spellcheck="false"
       />
@@ -279,7 +276,7 @@
     display: grid;
     grid-template-columns: auto minmax(320px, 1fr) auto;
     gap: 6px 16px;
-    align-items: end;
+    align-items: center;
     padding: 8px 12px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
@@ -330,27 +327,7 @@
 
   .query-wrap {
     display: grid;
-    gap: 5px;
     min-width: 0;
-  }
-
-  .query-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  label {
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  .query-meta span {
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 600;
   }
 
   .query-fields {
@@ -422,7 +399,7 @@
     display: grid;
     grid-template-columns: auto auto;
     gap: 6px 12px;
-    align-items: end;
+    align-items: center;
     min-width: 0;
   }
 
@@ -664,9 +641,6 @@
       justify-content: flex-start;
     }
 
-    .query-meta {
-      display: none;
-    }
   }
 
   @media (max-width: 1099px) {

@@ -26,3 +26,12 @@ describe('file or folder name refinement', () => {
     expect(page).toContain('search.pathQuery !== criteria.pathQuery');
   });
 });
+
+describe('search bar labels', () => {
+  it('uses accessible field labels without redundant visible instructions', () => {
+    expect(searchBar).not.toContain('class="query-meta"');
+    expect(searchBar).not.toContain('Enter Search');
+    expect(searchBar).toContain('aria-label="Search text"');
+    expect(searchBar).toContain('placeholder="Search text"');
+  });
+});
