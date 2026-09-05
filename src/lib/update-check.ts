@@ -17,7 +17,7 @@ export type AvailableUpdate = {
   downloadName: string;
 };
 
-const LATEST_RELEASE_ENDPOINT = 'https://api.github.com/repos/sphynx79/searchmonkey-III/releases/latest';
+const LATEST_RELEASE_ENDPOINT = 'https://api.github.com/repos/ichelema/searchmonkey-III/releases/latest';
 
 export async function getAvailableUpdate(
   currentVersion: string,
@@ -45,7 +45,7 @@ export async function getAvailableUpdate(
   }
 
   const asset = selectBestAsset(release.assets ?? []);
-  const releaseUrl = release.html_url ?? 'https://github.com/sphynx79/searchmonkey-III/releases';
+  const releaseUrl = release.html_url ?? 'https://github.com/ichelema/searchmonkey-III/releases';
 
   return {
     currentVersion,

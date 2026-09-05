@@ -25,5 +25,5 @@ modules:
 
     sources:
       - type: archive
-        url: https://github.com/sphynx79/searchmonkey-III/releases/download/v0.4.0/Searchmonkey_linux_x86_64.tar.gz
+        url: https://github.com/ichelema/searchmonkey-III/releases/download/v0.4.0/Searchmonkey_linux_x86_64.tar.gz
         sha256: bb762c9d4ea7cd4b6417ca7b7f9f6e3f394151894089847d47ddd5b17e0cad67
