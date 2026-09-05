@@ -28,7 +28,7 @@
   let template = $state('');
   let error = $state('');
 
-  const samplePath = $derived(`/example/search-result.${normalizeExtension(extension) || 'txt'}`);
+  const samplePath = $derived(`/example/search-result.${['', '*'].includes(normalizeExtension(extension)) ? 'txt' : normalizeExtension(extension)}`);
   const preview = $derived(expandCommandTemplate(template, samplePath));
 
   onMount(() => {
@@ -63,8 +63,8 @@
 
   async function saveEntry() {
     const normalized = normalizeExtension(extension);
-    if (!/^[a-z0-9][a-z0-9+_-]*$/i.test(normalized)) {
-      error = 'Enter one file extension.';
+    if (normalized !== '*' && !/^[a-z0-9][a-z0-9+_-]*$/i.test(normalized)) {
+      error = 'Enter one file extension or * for every file.';
       return;
     }
     if (!template.trim().includes('{path}')) {
@@ -118,7 +118,7 @@
       <div class="section-heading">
         <div>
           <h2 id="file-opening-title">File opening</h2>
-          <p>Override the system-default application for individual file extensions.</p>
+          <p>Override the system-default application by file extension, with an optional fallback.</p>
         </div>
       </div>
 
@@ -131,7 +131,7 @@
             aria-expanded={editingIndex === index}
             onclick={() => editingIndex === index ? cancelEdit() : beginEdit(index)}
           >
-            <span class="extension"><code>.{rule.extension}</code></span>
+            <span class="extension"><code>{rule.extension === '*' ? '*' : `.${rule.extension}`}</code></span>
             <span class="entry-detail">
               <strong>{binaryFromTemplate(rule.template)}</strong>
               <small>{rule.template}</small>
@@ -161,8 +161,8 @@
   <form class="editor" onsubmit={(event) => { event.preventDefault(); void saveEntry(); }}>
     <div class="editor-grid">
       <label>
-        <span>Extension</span>
-        <div class="extension-input"><span>.</span><input bind:value={extension} placeholder="txt" aria-label="File extension" /></div>
+        <span>Extension pattern</span>
+        <input bind:value={extension} placeholder="txt or *" aria-label="File extension pattern" />
       </label>
       <label class="template-field">
         <span>Command template</span>
@@ -174,6 +174,7 @@
     </div>
 
     <div class="examples">
+      <p><strong>Pattern:</strong> <code>*</code> matches every file; a specific extension takes precedence.</p>
       <p><strong>Placeholders:</strong> <code>{'{path}'}</code>, <code>{'{line}'}</code>, <code>{'{column}'}</code></p>
       <p><strong>Example:</strong> <code>code --goto {'{path}'}:{'{line}'}:{'{column}'}</code></p>
       <div class="preview">

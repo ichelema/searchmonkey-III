@@ -26,7 +26,8 @@ export function parseFileOpenersConfig(value: string | null): FileOpenersConfig 
     const addRule = (extensionValue: string, templateValue: string) => {
       const extension = normalizeExtension(extensionValue);
       const template = templateValue.trim();
-      if (/^[a-z0-9][a-z0-9+_-]*$/i.test(extension) && template.includes('{path}') && parseCommandTemplate(template)) {
+      if ((extension === '*' || /^[a-z0-9][a-z0-9+_-]*$/i.test(extension))
+        && template.includes('{path}') && parseCommandTemplate(template)) {
         rules.push({ extension, template });
       }
     };
@@ -64,8 +65,9 @@ export function saveFileOpenersConfig(config: FileOpenersConfig) {
 export function openerForPath(path: string, config: FileOpenersConfig): FileOpenerRule | null {
   const filename = path.split(/[\\/]/).at(-1) ?? '';
   const extension = normalizeExtension(filename.includes('.') ? filename.split('.').at(-1) ?? '' : '');
-  if (!extension) return null;
-  return config.rules.find((rule) => rule.extension === extension) ?? null;
+  return config.rules.find((rule) => rule.extension === extension)
+    ?? config.rules.find((rule) => rule.extension === '*')
+    ?? null;
 }
 
 export function parseCommandTemplate(template: string): { command: string; arguments: string[] } | null {

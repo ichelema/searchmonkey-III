@@ -12,6 +12,7 @@ describe('file opener rules', () => {
   it('normalizes extension case and common forms', () => {
     expect(normalizeExtension('*.TXT')).toBe('txt');
     expect(normalizeExtension('.Md')).toBe('md');
+    expect(normalizeExtension('*')).toBe('*');
   });
 
   it('uses the first matching extension rule', () => {
@@ -23,6 +24,18 @@ describe('file opener rules', () => {
     };
     expect(openerForPath('/tmp/README.TXT', config)?.template).toBe('first {path}');
     expect(openerForPath('/tmp/README', config)).toBeNull();
+  });
+
+  it('uses a wildcard fallback while preferring a matching extension', () => {
+    const config: FileOpenersConfig = {
+      rules: [
+        { extension: '*', template: 'fallback {path}' },
+        { extension: 'md', template: 'markdown {path}' }
+      ]
+    };
+    expect(openerForPath('/tmp/README.md', config)?.template).toBe('markdown {path}');
+    expect(openerForPath('/tmp/notes.txt', config)?.template).toBe('fallback {path}');
+    expect(openerForPath('/tmp/README', config)?.template).toBe('fallback {path}');
   });
 
   it.each([
@@ -65,6 +78,14 @@ describe('file opener rules', () => {
         { extension: 'txt', template: '"/Applications/My Editor" --line {line} {path}' },
         { extension: 'md', template: '"/Applications/My Editor" --line {line} {path}' }
       ]
+    });
+  });
+
+  it('loads a wildcard rule from storage', () => {
+    expect(parseFileOpenersConfig(JSON.stringify({
+      rules: [{ extension: '*', template: 'editor {path}' }]
+    }))).toEqual({
+      rules: [{ extension: '*', template: 'editor {path}' }]
     });
   });
 
