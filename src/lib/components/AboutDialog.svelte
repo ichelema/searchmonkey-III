@@ -1,14 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
-  import { openUrl } from '@tauri-apps/plugin-opener';
 
   let { onClose }: { onClose?: () => void } = $props();
 
   let appVersion = $state('0.0.0');
-  let actionError = $state('');
-
-  const WEBSITE_URL = 'https://searchmonkey.dev';
 
   onMount(() => {
     void getVersion()
@@ -19,15 +15,6 @@
         appVersion = '0.0.0';
       });
   });
-
-  async function openWebsite() {
-    actionError = '';
-    try {
-      await openUrl(WEBSITE_URL);
-    } catch (error) {
-      actionError = error instanceof Error ? error.message : 'Could not open website.';
-    }
-  }
 </script>
 
 <div class="modal-layer" role="presentation">
@@ -43,12 +30,7 @@
 
     <p class="description">Fast desktop file search with regex, filters, previews, and indexing.</p>
 
-    <button type="button" class="link-button" onclick={openWebsite}>searchmonkey.dev</button>
     <p class="license">MIT</p>
-
-    {#if actionError}
-      <p class="error-text">{actionError}</p>
-    {/if}
 
     <button type="button" class="close-button" onclick={onClose}>Close</button>
   </div>
@@ -124,33 +106,6 @@
     color: var(--muted);
     font-size: 14px;
     line-height: 1.5;
-  }
-
-  .link-button {
-    margin: 18px 0 0;
-    border: 0;
-    padding: 0;
-    color: var(--accent);
-    background: transparent;
-    font: inherit;
-    font-size: 14px;
-    font-weight: 700;
-    text-decoration: none;
-  }
-
-  .link-button:hover,
-  .link-button:focus-visible {
-    color: var(--accent-strong);
-    text-decoration: underline;
-    outline: none;
-  }
-
-  .error-text {
-    width: 100%;
-    margin: 14px 0 0;
-    color: var(--danger);
-    font-size: 12px;
-    font-weight: 700;
   }
 
   .close-button {
