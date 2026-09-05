@@ -44,7 +44,7 @@ if (!changelog.includes(`## ${version} `)
   throw new Error(`CHANGELOG.md is missing separated release notes for ${version}`);
 }
 
-const repository = 'sphynx79/searchmonkey-III';
+const repository = 'ichelema/searchmonkey-III';
 if (!updateCheck.includes(`api.github.com/repos/${repository}/releases/latest`)
   || !updateCheck.includes(`github.com/${repository}/releases`)
   || !page.includes(`github.com/${repository}/releases`)

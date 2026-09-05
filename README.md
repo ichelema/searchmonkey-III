@@ -3,10 +3,13 @@
 **Real-time search for real files.**
 No index. No daemon. No stale results.
 
-Searchmonkey III is a modern desktop search tool that searches what is actually on disk — right now.
+Searchmonkey III is a modern desktop search tool that searches what is actually
+on disk — right now.
 It does not maintain a background index, and it does not return outdated results.
 
-This is a fork of [Searchmonkey III](https://github.com/cottrela/searchmonkey-III), maintained at https://github.com/sphynx79/searchmonkey-III.
+This is a fork of
+[Searchmonkey III](https://github.com/cottrela/searchmonkey-III), maintained at
+[ichelema/searchmonkey-III](https://github.com/ichelema/searchmonkey-III).
 
 ---
 

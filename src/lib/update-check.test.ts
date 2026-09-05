@@ -16,14 +16,14 @@ describe('fork update check', () => {
   it('requests only the fork and reports a newer release', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
       tag_name: 'v0.5.1',
-      html_url: 'https://github.com/sphynx79/searchmonkey-III/releases/tag/v0.5.1',
+      html_url: 'https://github.com/ichelema/searchmonkey-III/releases/tag/v0.5.1',
       assets: []
     }), { status: 200 }));
 
     const update = await getAvailableUpdate('0.5.0', fetcher as unknown as typeof fetch);
 
     expect(fetcher).toHaveBeenCalledWith(
-      'https://api.github.com/repos/sphynx79/searchmonkey-III/releases/latest',
+      'https://api.github.com/repos/ichelema/searchmonkey-III/releases/latest',
       expect.any(Object)
     );
     expect(update?.tagName).toBe('v0.5.1');

@@ -167,8 +167,8 @@
   const SAVED_SEARCHES_KEY = 'searchmonkey:saved-searches';
   const DISMISSED_UPDATE_KEY = 'searchmonkey:dismissed-update';
   const UPDATE_DISMISS_MS = 3 * 24 * 60 * 60 * 1000;
-  const RELEASE_NOTES_URL = 'https://github.com/sphynx79/searchmonkey-III/releases';
-  const REPORT_ISSUE_URL = 'https://github.com/sphynx79/searchmonkey-III/issues';
+  const RELEASE_NOTES_URL = 'https://github.com/ichelema/searchmonkey-III/releases';
+  const REPORT_ISSUE_URL = 'https://github.com/ichelema/searchmonkey-III/issues';
   const FILE_TYPE_PATTERNS: Record<string, string[]> = {
     text: ['*.txt', '*.md', '*.markdown', '*.rst', '*.csv', '*.tsv', '*.json', '*.yaml', '*.yml', '*.toml', '*.xml'],
     code: [

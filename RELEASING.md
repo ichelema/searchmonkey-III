@@ -39,7 +39,7 @@ profile.
 4. Verify settings migration, Nord styling, PDF search, syntax highlighting,
    and application identity `io.github.sphynx79.searchmonkey`.
 5. Verify update requests and release links use only
-   `sphynx79/searchmonkey-III`.
+   `ichelema/searchmonkey-III`.
 6. Confirm telemetry, feedback, website, marketplace, and purchase actions are
    absent.
 
