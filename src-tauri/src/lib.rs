@@ -21,7 +21,7 @@ use search::{
     FilePreview, FilePreviewLine, FilePreviewPageBreak, SearchMatch, SearchProvider, SearchRequest,
     SearchState, SearchStatus,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{MenuBuilder, SubmenuBuilder},
     Emitter, State,
@@ -30,6 +30,7 @@ use tauri::{
 const UI_RESULT_LIMIT: usize = 100_000;
 const PREVIEW_MAX_SCAN_LINES: u64 = 250_000;
 const DIRECTORY_SUGGESTION_LIMIT: usize = 500;
+const FILE_OPENING_SETTINGS_MENU_ID: &str = "file-opening-settings";
 const ABOUT_SEARCHMONKEY_MENU_ID: &str = "about-searchmonkey-iii";
 const REGEX_CHEAT_SHEET_MENU_ID: &str = "regex-cheat-sheet";
 const RELEASE_NOTES_MENU_ID: &str = "release-notes";
@@ -47,6 +48,16 @@ struct InstallPluginResult {
     plugin_id: String,
     version: String,
     status: plugins::runtime::PluginIndexSummary,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenFileRequest {
+    path: String,
+    line: Option<u64>,
+    column: Option<u64>,
+    command: Option<String>,
+    arguments: Option<Vec<String>>,
 }
 
 #[derive(Default)]
@@ -382,10 +393,229 @@ fn expand_home_path(path: &str) -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-async fn open_file_path(path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || open_path_native(path))
+async fn open_file_path(request: OpenFileRequest) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || open_path(request))
         .await
         .map_err(|err| err.to_string())?
+}
+
+fn open_path(request: OpenFileRequest) -> Result<(), String> {
+    let path = existing_path(request.path)?;
+    let Some(command) = request
+        .command
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    else {
+        return open_path_native(path.to_string_lossy().to_string());
+    };
+
+    let arguments = expand_file_opener_arguments(
+        request
+            .arguments
+            .unwrap_or_else(|| vec!["{path}".to_string()]),
+        &path,
+        request.line,
+        request.column,
+    )?;
+    let executable = resolve_file_opener_command(&command)?;
+    Command::new(executable)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| format!("Could not launch custom file opener: {err}"))
+}
+
+fn expand_file_opener_arguments(
+    arguments: Vec<String>,
+    path: &Path,
+    line: Option<u64>,
+    column: Option<u64>,
+) -> Result<Vec<String>, String> {
+    if !arguments.iter().any(|argument| argument.contains("{path}")) {
+        return Err("Custom opener arguments must include {path}.".to_string());
+    }
+
+    let path = path.to_string_lossy();
+    let line = line.unwrap_or(1).max(1).to_string();
+    let column = column.unwrap_or(1).max(1).to_string();
+    Ok(arguments
+        .into_iter()
+        .map(|argument| {
+            argument
+                .replace("{path}", path.as_ref())
+                .replace("{line}", &line)
+                .replace("{column}", &column)
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn validate_file_opener_command(command: String) -> Result<(), String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return Err("Enter an application or executable.".to_string());
+    }
+
+    resolve_file_opener_command(command).map(|_| ())
+}
+
+fn resolve_file_opener_command(command: &str) -> Result<PathBuf, String> {
+    let path = expand_home_path(command)?;
+    #[cfg(target_os = "macos")]
+    if path.is_dir()
+        && path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
+    {
+        return macos_app_executable(&path);
+    }
+
+    if path.is_absolute() || path.components().count() > 1 {
+        return is_executable_file(&path)
+            .then_some(path.clone())
+            .ok_or_else(|| {
+                format!(
+                    "Executable does not exist or is not executable: {}",
+                    path.display()
+                )
+            });
+    }
+
+    std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+        .flat_map(|directory| executable_candidates(&directory, command))
+        .find(|candidate| is_executable_file(candidate))
+        .ok_or_else(|| format!("Executable was not found in PATH: {command}"))
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    path.metadata()
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(windows)]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_app_executable(app_path: &Path) -> Result<PathBuf, String> {
+    let info_plist = app_path.join("Contents").join("Info.plist");
+    let output = Command::new("plutil")
+        .args(["-extract", "CFBundleExecutable", "raw", "-o", "-"])
+        .arg(&info_plist)
+        .output()
+        .map_err(|err| format!("Could not inspect application bundle: {err}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Application bundle has no readable executable: {}",
+            app_path.display()
+        ));
+    }
+
+    let executable_name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let executable = app_path
+        .join("Contents")
+        .join("MacOS")
+        .join(executable_name);
+    is_executable_file(&executable)
+        .then_some(executable.clone())
+        .ok_or_else(|| {
+            format!(
+                "Application bundle executable does not exist or is not executable: {}",
+                executable.display()
+            )
+        })
+}
+
+fn executable_candidates(directory: &Path, command: &str) -> Vec<PathBuf> {
+    let candidate = directory.join(command);
+    #[cfg(windows)]
+    {
+        if Path::new(command).extension().is_some() {
+            return vec![candidate];
+        }
+        let extensions =
+            std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+        return extensions
+            .split(';')
+            .filter(|extension| !extension.is_empty())
+            .map(|extension| directory.join(format!("{command}{extension}")))
+            .collect();
+    }
+    #[cfg(not(windows))]
+    vec![candidate]
+}
+
+#[cfg(test)]
+mod file_opener_tests {
+    use super::{expand_file_opener_arguments, resolve_file_opener_command};
+    use std::path::Path;
+
+    #[test]
+    fn expands_location_without_splitting_spaced_paths() {
+        let arguments = expand_file_opener_arguments(
+            vec!["--goto".to_string(), "{path}:{line}:{column}".to_string()],
+            Path::new("/tmp/My File.txt"),
+            Some(12),
+            Some(3),
+        )
+        .unwrap();
+
+        assert_eq!(arguments, ["--goto", "/tmp/My File.txt:12:3"]);
+    }
+
+    #[test]
+    fn clamps_location_and_requires_path_placeholder() {
+        assert_eq!(
+            expand_file_opener_arguments(
+                vec!["{path}:{line}:{column}".to_string()],
+                Path::new("/tmp/file.txt"),
+                Some(0),
+                Some(0),
+            )
+            .unwrap(),
+            ["/tmp/file.txt:1:1"]
+        );
+        assert!(expand_file_opener_arguments(
+            vec!["--line".to_string(), "{line}".to_string()],
+            Path::new("/tmp/file.txt"),
+            Some(2),
+            Some(3),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn rejects_missing_executable() {
+        let missing = tempfile::tempdir().unwrap().path().join("missing-editor");
+        assert!(resolve_file_opener_command(&missing.to_string_lossy()).is_err());
+    }
+
+    #[test]
+    fn validates_an_executable_path() {
+        let executable = tempfile::NamedTempFile::new().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            std::fs::set_permissions(executable.path(), std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+        }
+
+        assert_eq!(
+            resolve_file_opener_command(&executable.path().to_string_lossy()).unwrap(),
+            executable.path()
+        );
+    }
 }
 
 #[tauri::command]
@@ -1061,6 +1291,8 @@ pub fn run() {
             let app_menu = SubmenuBuilder::new(app, "Searchmonkey III")
                 .text(ABOUT_SEARCHMONKEY_MENU_ID, "About Searchmonkey III")
                 .separator()
+                .text(FILE_OPENING_SETTINGS_MENU_ID, "Settings…")
+                .separator()
                 .quit()
                 .build()?;
             let help_menu = SubmenuBuilder::new(app, "Help")
@@ -1105,6 +1337,10 @@ pub fn run() {
                 .build()
         })
         .on_menu_event(|app, event| {
+            if event.id() == FILE_OPENING_SETTINGS_MENU_ID {
+                let _ = app.emit("open-file-opening-settings", ());
+            }
+
             if event.id() == ABOUT_SEARCHMONKEY_MENU_ID {
                 let _ = app.emit("open-about-searchmonkey", ());
             }
@@ -1186,7 +1422,8 @@ pub fn run() {
             start_search,
             retry_plugin_issue_type,
             uninstall_plugin_version,
-            unignore_plugin_issue
+            unignore_plugin_issue,
+            validate_file_opener_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
